@@ -2,24 +2,19 @@ import type { TranslationRequest, TranslationResult } from "./types";
 import { getSettings } from "./storage";
 
 const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
-const MODEL = "google/gemma-2-9b-it";
+const MODEL = "google/gemma-2-9b-it:free";
 
 function buildSystemPrompt(targetLanguage: string): string {
   return `You are a precise vocabulary translation assistant. Your ONLY task is to translate individual words/phrases and provide concise lexical information.
 
-Given a word and its surrounding context, respond with ONLY a JSON object in this exact format:
-{
-  "translation": "translation in ${targetLanguage}",
-  "definition": "brief definition in ${targetLanguage} (max 10 words)",
-  "pronunciation": "pronunciation guide for the ORIGINAL word",
-  "synonym": "one synonym or similar word in ${targetLanguage}, or empty string if none"
-}
+Given a word and its surrounding context, respond with ONLY a valid JSON object. Do NOT wrap it in markdown code fences. Output ONLY the raw JSON:
+{"translation":"translation in ${targetLanguage}","definition":"brief definition in ${targetLanguage} (max 10 words)","pronunciation":"pronunciation guide for the ORIGINAL word","synonym":"one synonym or similar word in ${targetLanguage}, or empty string if none"}
 
 Rules:
 - Context matters: choose the translation that fits the given context
 - Keep all values concise (under 15 words each)
-- Respond with ONLY the JSON object, no other text
-- If the word is very common and has no meaningful translation value, mark translation as empty string`;
+- Output ONLY the JSON object, nothing else — no markdown, no explanation
+- If the word is very common and has no meaningful translation value, set translation to empty string`;
 }
 
 function buildUserPrompt(word: string, context: string, targetLanguage: string): string {
@@ -29,20 +24,31 @@ Translate to: ${targetLanguage}`;
 }
 
 function parseResponse(content: string): TranslationResult | null {
+  let json = content.trim();
+
+  // Strip markdown code fences
+  json = json.replace(/```(?:json)?\s*/g, "").trim();
+
+  // Find the JSON object in the response
+  const braceStart = json.indexOf("{");
+  const braceEnd = json.lastIndexOf("}");
+  if (braceStart !== -1 && braceEnd > braceStart) {
+    json = json.substring(braceStart, braceEnd + 1);
+  }
+
   try {
-    let json = content.trim();
-    if (json.startsWith("```")) {
-      json = json.replace(/```(?:json)?\s*/g, "").trim();
-    }
     const parsed = JSON.parse(json);
-    return {
-      translation: parsed.translation || "",
-      definition: parsed.definition || "",
-      pronunciation: parsed.pronunciation || "",
-      synonym: parsed.synonym || "",
-      cachedAt: Date.now(),
-    };
+    if (typeof parsed === "object" && parsed !== null) {
+      return {
+        translation: String(parsed.translation || ""),
+        definition: String(parsed.definition || ""),
+        pronunciation: String(parsed.pronunciation || ""),
+        synonym: String(parsed.synonym || ""),
+        cachedAt: Date.now(),
+      };
+    }
   } catch {
+    // Try line-by-line parsing as fallback
     const lines = content.split("\n").filter(Boolean);
     const result: TranslationResult = {
       translation: "",
@@ -52,7 +58,7 @@ function parseResponse(content: string): TranslationResult | null {
       cachedAt: Date.now(),
     };
     for (const line of lines) {
-      const match = line.match(/^(translation|definition|pronunciation|synonym):\s*(.+)/i);
+      const match = line.match(/^(translation|definition|pronunciation|synonym)[:\s]+(.+)/i);
       if (match) {
         const key = match[1].toLowerCase() as keyof TranslationResult;
         if (key in result) {
@@ -62,6 +68,7 @@ function parseResponse(content: string): TranslationResult | null {
     }
     return result.translation ? result : null;
   }
+  return null;
 }
 
 export async function translateWord(request: TranslationRequest): Promise<TranslationResult> {
@@ -87,7 +94,6 @@ export async function translateWord(request: TranslationRequest): Promise<Transl
       ],
       temperature: 0.3,
       max_tokens: 200,
-      response_format: { type: "json_object" },
     }),
   });
 

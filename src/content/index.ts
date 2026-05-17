@@ -131,20 +131,28 @@ async function handleWordHover(span: HTMLElement) {
 
 function translateWord(word: string): Promise<TranslationResult> {
   return new Promise((resolve, reject) => {
-    chrome.runtime.sendMessage(
-      { type: MESSAGE_TYPES.TRANSLATE_WORD, payload: { word } },
-      (response) => {
-        if (chrome.runtime.lastError) {
-          reject(new Error(chrome.runtime.lastError.message));
-          return;
+    try {
+      chrome.runtime.sendMessage(
+        { type: MESSAGE_TYPES.TRANSLATE_WORD, payload: { word } },
+        (response) => {
+          if (chrome.runtime.lastError) {
+            console.error("[LinguaFlow] Translation message error:", chrome.runtime.lastError.message);
+            reject(new Error(chrome.runtime.lastError.message));
+            return;
+          }
+          if (response?.success) {
+            resolve(response.data as TranslationResult);
+          } else {
+            const errMsg = response?.error || "Translation failed";
+            console.error("[LinguaFlow] Translation API error:", errMsg);
+            reject(new Error(errMsg));
+          }
         }
-        if (response?.success) {
-          resolve(response.data as TranslationResult);
-        } else {
-          reject(new Error(response?.error || "Translation failed"));
-        }
-      }
-    );
+      );
+    } catch (err) {
+      console.error("[LinguaFlow] sendMessage failed:", err);
+      reject(new Error("Extension context lost — try reloading the page"));
+    }
   });
 }
 
@@ -291,11 +299,17 @@ function processVisibleContent() {
       if (textNodes.length >= maxToProcess) break;
     }
 
+    let processed = 0;
     for (const textNode of textNodes) {
       if (translatedWords.size >= settings.maxTranslationsPerPage) break;
       if (textNode.parentElement && !textNode.parentElement.hasAttribute("data-linguaflow")) {
         processTextNode(textNode);
+        processed++;
       }
+    }
+
+    if (processed > 0) {
+      console.log(`[LinguaFlow] Processed ${processed} text nodes, ${translatedWords.size} words marked`);
     }
   } finally {
     isProcessing = false;
