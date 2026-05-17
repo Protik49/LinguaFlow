@@ -1,0 +1,37 @@
+{
+  "name": "linguaflow",
+  "version": "1.0.0",
+  "description": "AI-powered vocabulary learning Chrome Extension",
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -n ui,bg,cs \"npm run dev:ui\" \"npm run dev:bg\" \"npm run dev:cs\"",
+    "dev:ui": "vite",
+    "dev:bg": "esbuild src/background/service-worker.ts --bundle --outfile=dist/background.js --format=esm --target=chrome100 --watch",
+    "dev:cs": "esbuild src/content/index.ts --bundle --outfile=dist/content.js --format=iife --target=chrome100 --watch",
+    "build": "npm run build:clean && npm run build:bg && npm run build:cs && npm run build:icons && npm run build:ui",
+    "build:clean": "node -e \"const{existsSync,rmSync,mkdirSync}=require('fs');const p='dist';if(existsSync(p))rmSync(p,{recursive:true});mkdirSync(p,{recursive:true});\"",
+    "build:bg": "esbuild src/background/service-worker.ts --bundle --outfile=dist/background.js --format=esm --target=chrome100 --minify",
+    "build:cs": "esbuild src/content/index.ts --bundle --outfile=dist/content.js --format=iife --target=chrome100 --minify",
+    "build:ui": "vite build",
+    "build:icons": "node scripts/generate-icons.mjs",
+    "build:all": "npm run build:clean && npm run build:bg && npm run build:cs && npm run build:icons && npm run build:ui"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.0.268",
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.1",
+    "autoprefixer": "^10.4.19",
+    "concurrently": "^8.2.2",
+    "esbuild": "^0.23.0",
+    "postcss": "^8.4.39",
+    "sharp": "^0.33.4",
+    "tailwindcss": "^3.4.7",
+    "typescript": "^5.5.4",
+    "vite": "^5.3.5"
+  }
+}
