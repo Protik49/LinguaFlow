@@ -2,7 +2,7 @@ import type { TranslationRequest, TranslationResult } from "./types";
 import { getSettings } from "./storage";
 
 const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
-const MODEL = "google/gemma-2-9b-it:free";
+const MODEL = "google/gemma-4-31b-it:free";
 
 function buildSystemPrompt(targetLanguage: string): string {
   return `You are a precise vocabulary translation assistant. Your ONLY task is to translate individual words/phrases and provide concise lexical information.
