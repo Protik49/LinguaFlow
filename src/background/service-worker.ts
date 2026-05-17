@@ -1,6 +1,6 @@
 import type { TranslationRequest, TranslationResult, VocabularyEntry } from "../shared/types";
 import { translateWord } from "../shared/api";
-import { getSettings, saveSettings, getCachedTranslation, cacheTranslation, addVocabularyEntry, exportVocabulary } from "../shared/storage";
+import { getSettings, saveSettings, getCachedTranslation, cacheTranslation, addVocabularyEntry } from "../shared/storage";
 import { MESSAGE_TYPES } from "../shared/constants";
 
 interface PendingRequest {
@@ -12,6 +12,7 @@ interface PendingRequest {
 
 const pendingQueue: PendingRequest[] = [];
 let processing = false;
+const recentErrors: { message: string; time: string }[] = [];
 
 function debounce(fn: () => void, ms: number) {
   let timeout: ReturnType<typeof setTimeout>;
@@ -19,6 +20,12 @@ function debounce(fn: () => void, ms: number) {
     clearTimeout(timeout);
     timeout = setTimeout(fn, ms);
   };
+}
+
+function recordError(msg: string) {
+  recentErrors.unshift({ message: msg, time: new Date().toLocaleTimeString() });
+  if (recentErrors.length > 20) recentErrors.pop();
+  chrome.storage.local.set({ linguaflow_last_errors: recentErrors });
 }
 
 const processQueue = debounce(async () => {
@@ -54,7 +61,9 @@ const processQueue = debounce(async () => {
           await cacheTranslation(cacheKey, result);
           req.resolve(result);
         } catch (err) {
-          req.reject(err instanceof Error ? err : new Error(String(err)));
+          const msg = err instanceof Error ? err.message : String(err);
+          recordError(msg);
+          req.reject(new Error(msg));
         }
       })
     );
@@ -110,6 +119,35 @@ async function handleMessage(type: string, payload: unknown): Promise<unknown> {
     case MESSAGE_TYPES.OPEN_OPTIONS: {
       chrome.runtime.openOptionsPage();
       return { opened: true };
+    }
+
+    case MESSAGE_TYPES.TEST_CONNECTION: {
+      const settings = await getSettings();
+      if (!settings.apiKey) {
+        return { success: false, message: "No API key set. Go to Setup tab and enter your OpenRouter API key." };
+      }
+      try {
+        const result = await translateWord({
+          word: "hello",
+          context: "Hello, how are you?",
+          targetLanguage: settings.targetLanguage,
+        });
+        return { success: true, message: `Connected! Test: hello → ${result.translation || result.definition || "OK"}` };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        recordError(msg);
+        return { success: false, message: msg };
+      }
+    }
+
+    case MESSAGE_TYPES.GET_ERRORS: {
+      return recentErrors;
+    }
+
+    case MESSAGE_TYPES.CLEAR_ERRORS: {
+      recentErrors.length = 0;
+      chrome.storage.local.remove("linguaflow_last_errors");
+      return { cleared: true };
     }
 
     default:

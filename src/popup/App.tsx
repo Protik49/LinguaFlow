@@ -19,6 +19,9 @@ export default function App() {
   const [statusMsg, setStatusMsg] = useState("");
   const [vocab, setVocab] = useState<VocabularyEntry[]>([]);
   const [vocabFilter, setVocabFilter] = useState("");
+  const [errors, setErrors] = useState<{ message: string; time: string }[]>([]);
+  const [testStatus, setTestStatus] = useState<"idle" | "testing" | "ok" | "fail">("idle");
+  const [testMsg, setTestMsg] = useState("");
 
   useEffect(() => {
     chrome.runtime.sendMessage({ type: MESSAGE_TYPES.GET_SETTINGS }, (res) => {
@@ -29,6 +32,9 @@ export default function App() {
     });
     chrome.storage.local.get("linguaflow_vocabulary", (result) => {
       setVocab(result.linguaflow_vocabulary || []);
+    });
+    chrome.runtime.sendMessage({ type: MESSAGE_TYPES.GET_ERRORS }, (res) => {
+      if (res?.success) setErrors(res.data || []);
     });
   }, []);
 
@@ -67,6 +73,32 @@ export default function App() {
   const clearCache = () => {
     chrome.runtime.sendMessage({ type: MESSAGE_TYPES.CACHE_CLEAR }, () => {
       showStatus("Cache cleared!");
+    });
+  };
+
+  const testConnection = () => {
+    setTestStatus("testing");
+    setTestMsg("Testing...");
+    chrome.runtime.sendMessage({ type: MESSAGE_TYPES.TEST_CONNECTION }, (res) => {
+      if (res?.success) {
+        if (res.data.success) {
+          setTestStatus("ok");
+          setTestMsg(res.data.message);
+        } else {
+          setTestStatus("fail");
+          setTestMsg(res.data.message);
+        }
+      } else {
+        setTestStatus("fail");
+        setTestMsg(res?.error || "Test failed");
+      }
+    });
+  };
+
+  const clearErrors = () => {
+    chrome.runtime.sendMessage({ type: MESSAGE_TYPES.CLEAR_ERRORS }, () => {
+      setErrors([]);
+      showStatus("Errors cleared!");
     });
   };
 
@@ -235,7 +267,7 @@ export default function App() {
         )}
 
         {tab === "setup" && (
-          <div className="px-4 py-3 space-y-4">
+          <div className="px-4 py-3 space-y-3">
             {/* API Key */}
             <div>
               <label className="block text-[10px] font-medium text-gray-400 dark:text-gray-500 mb-1 uppercase tracking-wider">
@@ -272,18 +304,55 @@ export default function App() {
               </div>
             </div>
 
-            {/* Cache */}
+            {/* Test Connection */}
             <div className="border-t border-gray-100 dark:border-gray-800 pt-3">
-              <label className="block text-[10px] font-medium text-gray-400 dark:text-gray-500 mb-1 uppercase tracking-wider">
-                Data
-              </label>
-              <button
-                onClick={clearCache}
-                className="w-full py-1.5 text-xs font-medium text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800 rounded-lg hover:bg-red-50 dark:hover:bg-red-950 transition-colors"
-              >
-                Clear Translation Cache
-              </button>
+              <div className="flex gap-1.5">
+                <button
+                  onClick={testConnection}
+                  disabled={testStatus === "testing"}
+                  className="flex-1 py-1.5 text-xs font-medium border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors disabled:opacity-50"
+                >
+                  {testStatus === "testing" ? "Testing..." : "Test Connection"}
+                </button>
+                <button
+                  onClick={clearCache}
+                  className="flex-1 py-1.5 text-xs font-medium text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800 rounded-lg hover:bg-red-50 dark:hover:bg-red-950 transition-colors"
+                >
+                  Clear Cache
+                </button>
+              </div>
+              {testMsg && (
+                <div className={`mt-1.5 px-2 py-1 rounded text-[10px] font-mono break-all ${
+                  testStatus === "ok"
+                    ? "bg-green-50 dark:bg-green-950 text-green-700 dark:text-green-400"
+                    : "bg-red-50 dark:bg-red-950 text-red-700 dark:text-red-400"
+                }`}>
+                  {testMsg}
+                </div>
+              )}
             </div>
+
+            {/* Error Log */}
+            {errors.length > 0 && (
+              <div className="border-t border-gray-100 dark:border-gray-800 pt-3">
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-[10px] font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wider">
+                    Errors ({errors.length})
+                  </label>
+                  <button onClick={clearErrors} className="text-[10px] text-gray-400 hover:text-red-500">
+                    Clear
+                  </button>
+                </div>
+                <div className="space-y-1 max-h-32 overflow-y-auto">
+                  {errors.slice(0, 10).map((err, i) => (
+                    <div key={i} className="px-2 py-1 rounded bg-red-50 dark:bg-red-950/50 text-[10px] font-mono text-red-600 dark:text-red-400 break-all">
+                      <span className="text-red-400 dark:text-red-500 mr-1">{err.time}</span>
+                      {err.message}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
