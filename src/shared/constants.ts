@@ -1,0 +1,54 @@
+export const MESSAGE_TYPES = {
+  TRANSLATE_WORD: "LINGUAFLOW_TRANSLATE_WORD",
+  TRANSLATION_RESULT: "LINGUAFLOW_TRANSLATION_RESULT",
+  TRANSLATION_ERROR: "LINGUAFLOW_TRANSLATION_ERROR",
+  GET_SETTINGS: "LINGUAFLOW_GET_SETTINGS",
+  SETTINGS_UPDATED: "LINGUAFLOW_SETTINGS_UPDATED",
+  SAVE_VOCABULARY: "LINGUAFLOW_SAVE_VOCABULARY",
+  VOCABULARY_SAVED: "LINGUAFLOW_VOCABULARY_SAVED",
+  TOGGLE_ENABLED: "LINGUAFLOW_TOGGLE_ENABLED",
+  CACHE_CLEAR: "LINGUAFLOW_CACHE_CLEAR",
+  OPEN_OPTIONS: "LINGUAFLOW_OPEN_OPTIONS",
+} as const;
+
+export const SKIP_TAGS = new Set([
+  "SCRIPT",
+  "STYLE",
+  "CODE",
+  "PRE",
+  "TEXTAREA",
+  "INPUT",
+  "SELECT",
+  "OPTION",
+  "NOSCRIPT",
+  "IFRAME",
+  "SVG",
+  "CANVAS",
+  "VIDEO",
+  "AUDIO",
+  "OBJECT",
+  "EMBED",
+  "MATH",
+  "HEAD",
+  "LINK",
+  "META",
+  "TITLE",
+]);
+
+export const SKIP_CLASSES = [
+  "linguaflow",
+  "code",
+  "pre",
+  "linenumber",
+  "line-number",
+  "hljs",
+  "syntax-highlighter",
+  "prism",
+  "CodeMirror",
+  "monaco-editor",
+];
+
+export const SKIP_ATTRS = [
+  "contenteditable",
+  "data-linguaflow-skip",
+];

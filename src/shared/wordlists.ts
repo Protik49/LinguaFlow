@@ -1,0 +1,177 @@
+const COMMON_WORDS = new Set([
+  "the", "be", "to", "of", "and", "a", "in", "that", "have", "i",
+  "it", "for", "not", "on", "with", "he", "as", "you", "do", "at",
+  "this", "but", "his", "by", "from", "they", "we", "say", "her", "she",
+  "or", "an", "will", "my", "one", "all", "would", "there", "their", "what",
+  "so", "up", "out", "if", "about", "who", "get", "which", "go", "me",
+  "when", "make", "can", "like", "time", "no", "just", "him", "know", "take",
+  "people", "into", "year", "your", "good", "some", "could", "them", "see", "other",
+  "than", "then", "now", "look", "only", "come", "its", "over", "think", "also",
+  "back", "after", "use", "two", "how", "our", "work", "first", "well", "way",
+  "even", "new", "want", "because", "any", "these", "give", "day", "most", "us",
+  "been", "such", "more", "very", "own", "may", "each", "where", "much", "went",
+  "is", "are", "was", "were", "has", "had", "been", "being", "do", "does",
+  "did", "should", "could", "would", "might", "must", "shall", "will", "can", "may",
+  "man", "woman", "child", "world", "school", "state", "family", "student", "country",
+  "hand", "part", "place", "case", "week", "company", "system", "program",
+  "question", "work", "government", "number", "night", "point", "home",
+  "water", "room", "mother", "area", "money", "story", "fact", "month",
+  "lot", "right", "study", "book", "eye", "job", "word", "business",
+  "issue", "side", "kind", "head", "house", "service", "friend", "father",
+  "power", "hour", "game", "line", "end", "member", "law", "car",
+  "city", "community", "name", "president", "team", "minute", "idea", "kid",
+  "body", "information", "back", "parent", "face", "others", "level",
+  "office", "door", "health", "person", "art", "war", "history", "party",
+  "result", "change", "morning", "reason", "research", "girl", "guy",
+  "moment", "air", "teacher", "force", "education",
+]);
+
+const INTERMEDIATE_SKIP = new Set([
+  ...COMMON_WORDS,
+  "able", "accept", "across", "act", "actually", "add", "address", "admit",
+  "affect", "afraid", "after", "again", "against", "age", "ago", "agree",
+  "ahead", "allow", "almost", "alone", "along", "already", "although", "always",
+  "among", "amount", "animal", "another", "answer", "appear", "apply", "area",
+  "arm", "around", "arrive", "article", "ask", "assume", "attention", "avoid",
+  "baby", "bad", "bag", "ball", "bank", "bar", "base", "beat", "beautiful",
+  "become", "bed", "before", "begin", "behind", "believe", "benefit", "best",
+  "better", "between", "big", "bill", "bit", "black", "blood", "blue",
+  "board", "boat", "body", "book", "born", "both", "box", "boy", "break",
+  "bring", "brother", "brown", "build", "building", "buy", "call", "camera",
+  "campaign", "capital", "card", "care", "career", "carry", "catch", "cause",
+  "cell", "center", "central", "century", "certain", "chair", "chance",
+  "character", "check", "choice", "choose", "church", "citizen", "city",
+  "civil", "claim", "class", "clear", "clearly", "close", "coach", "cold",
+  "collection", "college", "color", "commercial", "common", "community",
+  "compare", "computer", "concern", "condition", "conference", "congress",
+  "consider", "consumer", "contain", "continue", "control", "cost", "could",
+  "country", "couple", "course", "court", "cover", "create", "crime", "cultural",
+  "culture", "cup", "current", "customer", "cut", "dark", "data", "daughter",
+  "dead", "deal", "death", "debate", "decade", "decide", "decision", "deep",
+  "defense", "degree", "democratic", "describe", "design", "despite", "detail",
+  "determine", "develop", "development", "die", "difference", "different",
+  "difficult", "dinner", "direction", "discuss", "discussion", "doctor",
+  "dog", "door", "down", "draw", "dream", "drive", "drop", "drug", "during",
+  "east", "easy", "eat", "economic", "economy", "edge", "education", "effect",
+  "effort", "eight", "either", "election", "else", "employee", "energy",
+  "enjoy", "enough", "enter", "entire", "environment", "especially",
+  "establish", "evening", "event", "ever", "every", "everybody", "everyone",
+  "everything", "evidence", "exactly", "example", "executive", "exist",
+  "expect", "experience", "explain", "face", "fact", "factor", "fail",
+  "fall", "family", "far", "fast", "father", "fear", "federal", "feel",
+  "feeling", "field", "fight", "figure", "fill", "film", "final", "finally",
+  "financial", "find", "fine", "finger", "finish", "fire", "firm", "fish",
+  "five", "floor", "fly", "focus", "follow", "food", "foot", "force",
+  "foreign", "forget", "form", "former", "forward", "four", "free",
+  "friend", "front", "full", "fund", "future", "game", "garden", "gas",
+  "general", "generation", "girl", "give", "glass", "goal", "good", "great",
+  "green", "ground", "group", "grow", "growth", "guess", "gun", "guy",
+  "hair", "half", "hand", "hang", "happen", "happy", "hard", "head",
+  "health", "hear", "heart", "heavy", "help", "here", "high", "history",
+  "hit", "hold", "home", "hope", "horse", "hospital", "hot", "hotel",
+  "hour", "house", "however", "huge", "human", "hundred", "husband",
+  "idea", "identify", "image", "imagine", "impact", "important", "improve",
+  "include", "including", "increase", "indeed", "indicate", "individual",
+  "industry", "information", "inside", "instead", "interest", "international",
+  "interview", "investment", "involve", "issue", "item", "job", "join",
+  "judge", "keep", "key", "kid", "kill", "kind", "kitchen", "know", "knowledge",
+  "land", "language", "large", "last", "late", "later", "laugh", "law",
+  "lawyer", "lay", "lead", "leader", "learn", "least", "leave", "left",
+  "legal", "less", "let", "letter", "level", "lie", "life", "light",
+  "like", "likely", "line", "list", "listen", "little", "live", "local",
+  "long", "look", "lose", "loss", "lot", "love", "low", "machine", "magazine",
+  "main", "maintain", "major", "majority", "manage", "management", "manager",
+  "market", "marriage", "material", "matter", "maybe", "mean", "measure",
+  "media", "medical", "meet", "meeting", "member", "memory", "mention",
+  "message", "method", "middle", "might", "military", "million", "mind",
+  "minute", "miss", "mission", "model", "modern", "moment", "money",
+  "month", "more", "morning", "mother", "mouth", "move", "movement",
+  "movie", "much", "music", "must", "name", "nation", "national", "natural",
+  "nature", "near", "nearly", "necessary", "need", "network", "never",
+  "news", "newspaper", "next", "nice", "night", "none", "nor", "north",
+  "note", "nothing", "notice", "number", "occur", "offer", "office",
+  "officer", "official", "often", "once", "only", "onto", "open",
+  "operation", "opportunity", "option", "order", "organization", "other",
+  "outside", "over", "own", "owner", "page", "pain", "painting", "paper",
+  "parent", "part", "participant", "particular", "particularly", "partner",
+  "party", "pass", "past", "patient", "pattern", "pay", "peace", "people",
+  "per", "perform", "performance", "period", "person", "personal",
+  "phone", "physical", "pick", "picture", "piece", "place", "plan",
+  "plant", "play", "player", "police", "policy", "political", "politics",
+  "poor", "popular", "population", "position", "positive", "possible",
+  "power", "practice", "prepare", "present", "president", "pressure",
+  "pretty", "prevent", "price", "private", "probably", "problem",
+  "process", "produce", "product", "production", "professional",
+  "professor", "program", "project", "property", "protect", "prove",
+  "provide", "public", "pull", "purpose", "push", "put", "quality",
+  "question", "quickly", "quite", "race", "radio", "raise", "range",
+  "rate", "rather", "reach", "read", "ready", "real", "reality",
+  "realize", "really", "reason", "receive", "recent", "recognize",
+  "record", "red", "reduce", "reflect", "region", "relate", "relationship",
+  "religious", "remain", "remember", "remove", "report", "represent",
+  "require", "resource", "respond", "response", "rest", "result",
+  "return", "reveal", "rich", "right", "rise", "risk", "road", "rock",
+  "role", "room", "rule", "run", "safe", "same", "save", "scene",
+  "school", "science", "scientist", "season", "seat", "second",
+  "section", "security", "seek", "seem", "sell", "send", "senior",
+  "sense", "series", "serious", "serve", "service", "set", "seven",
+  "several", "shake", "share", "shoot", "short", "shot", "shoulder",
+  "show", "side", "sign", "significant", "similar", "simple", "simply",
+  "since", "sing", "single", "sister", "sit", "site", "situation",
+  "size", "skill", "skin", "small", "smile", "social", "society",
+  "soldier", "somebody", "someone", "something", "sometimes", "son",
+  "song", "soon", "sort", "sound", "source", "south", "southern",
+  "space", "speak", "special", "specific", "speech", "spend", "sport",
+  "staff", "stage", "stand", "standard", "star", "start", "state",
+  "statement", "station", "stay", "step", "still", "stock", "stop",
+  "store", "story", "strategy", "street", "strong", "structure",
+  "student", "study", "stuff", "style", "subject", "success", "such",
+  "suddenly", "suffer", "suggest", "summer", "support", "surface",
+  "system", "table", "take", "talk", "task", "tax", "teach", "teacher",
+  "team", "technology", "television", "tell", "tend", "term", "test",
+  "thank", "themselves", "then", "theory", "thing", "think", "third",
+  "though", "thought", "thousand", "threat", "three", "through", "throw",
+  "thus", "time", "today", "together", "tonight", "total", "tough",
+  "toward", "town", "trade", "traditional", "training", "travel", "treat",
+  "treatment", "tree", "trial", "trip", "trouble", "true", "truth", "try",
+  "turn", "type", "under", "understand", "unit", "until", "upon", "use",
+  "usually", "value", "various", "very", "victim", "view", "violence",
+  "visit", "voice", "vote", "wait", "walk", "wall", "want", "watch",
+  "water", "weapon", "wear", "week", "weight", "west", "western",
+  "whatever", "whether", "white", "whole", "whose", "wide", "wife",
+  "will", "win", "wind", "window", "wish", "with", "within", "without",
+  "woman", "wonder", "wood", "word", "worker", "world", "worry", "worth",
+  "would", "write", "writer", "wrong", "yard", "yeah", "year", "yes",
+  "young",
+]);
+
+export function shouldTranslate(
+  word: string,
+  difficulty: "beginner" | "intermediate" | "advanced"
+): boolean {
+  if (word.length < 3) return false;
+
+  // Skip numbers and pure symbols
+  if (/^\d+$/.test(word)) return false;
+  if (/^[^\w\s]+$/.test(word)) return false;
+
+  const lower = word.toLowerCase();
+
+  switch (difficulty) {
+    case "beginner":
+      return !COMMON_WORDS.has(lower) && word.length >= 3;
+    case "intermediate":
+      return !INTERMEDIATE_SKIP.has(lower) && word.length >= 4;
+    case "advanced":
+      return !INTERMEDIATE_SKIP.has(lower) && word.length >= 5;
+    default:
+      return false;
+  }
+}
+
+export function getWordDifficulty(word: string): "easy" | "medium" | "hard" {
+  const lower = word.toLowerCase();
+  if (COMMON_WORDS.has(lower)) return "easy";
+  if (INTERMEDIATE_SKIP.has(lower)) return "medium";
+  return "hard";
+}
