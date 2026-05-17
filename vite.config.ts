@@ -27,7 +27,6 @@ function copyManifestPlugin() {
         host_permissions: ["https://openrouter.ai/*"],
         background: {
           service_worker: "background.js",
-          type: "module",
         },
         content_scripts: [
           {

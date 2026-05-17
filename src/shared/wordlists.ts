@@ -149,9 +149,8 @@ export function shouldTranslate(
   word: string,
   difficulty: "beginner" | "intermediate" | "advanced"
 ): boolean {
-  if (word.length < 3) return false;
+  if (word.length < 2) return false;
 
-  // Skip numbers and pure symbols
   if (/^\d+$/.test(word)) return false;
   if (/^[^\w\s]+$/.test(word)) return false;
 
@@ -161,9 +160,9 @@ export function shouldTranslate(
     case "beginner":
       return !COMMON_WORDS.has(lower) && word.length >= 3;
     case "intermediate":
-      return !INTERMEDIATE_SKIP.has(lower) && word.length >= 4;
+      return !INTERMEDIATE_SKIP.has(lower) && word.length >= 3;
     case "advanced":
-      return !INTERMEDIATE_SKIP.has(lower) && word.length >= 5;
+      return !INTERMEDIATE_SKIP.has(lower) && word.length >= 4;
     default:
       return false;
   }

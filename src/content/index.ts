@@ -19,26 +19,41 @@ const translatedWords = new Set<string>();
 let settings: UserSettings | null = null;
 let observer: MutationObserver | null = null;
 let scanTimeout: ReturnType<typeof setTimeout> | null = null;
-let translationQueue: Array<{ element: HTMLElement; word: string }> = [];
-let processingQueue = false;
+let isProcessing = false;
 
 async function initSettings(): Promise<UserSettings> {
-  return new Promise((resolve) => {
-    chrome.runtime.sendMessage({ type: MESSAGE_TYPES.GET_SETTINGS }, (response) => {
-      if (response?.success) {
-        resolve(response.data as UserSettings);
-      } else {
-        resolve({
-          targetLanguage: "Bengali",
-          difficulty: "intermediate",
-          enabled: true,
-          apiKey: "",
-          displayMode: "tooltip",
-          maxTranslationsPerPage: 50,
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const result = await new Promise<UserSettings>((resolve, reject) => {
+        chrome.runtime.sendMessage({ type: MESSAGE_TYPES.GET_SETTINGS }, (response) => {
+          if (chrome.runtime.lastError) {
+            reject(new Error(chrome.runtime.lastError.message));
+            return;
+          }
+          if (response?.success) {
+            resolve(response.data as UserSettings);
+          } else {
+            reject(new Error("No response from background"));
+          }
         });
+      });
+      return result;
+    } catch (err) {
+      console.warn(`[LinguaFlow] Settings fetch attempt ${attempt + 1} failed:`, err);
+      if (attempt < 2) {
+        await new Promise((r) => setTimeout(r, 500 * (attempt + 1)));
       }
-    });
-  });
+    }
+  }
+  console.log("[LinguaFlow] Using default settings (background unreachable)");
+  return {
+    targetLanguage: "Bengali",
+    difficulty: "intermediate",
+    enabled: true,
+    apiKey: "",
+    displayMode: "tooltip",
+    maxTranslationsPerPage: 50,
+  };
 }
 
 function createWordSpan(word: string, originalText: string, start: number, end: number, isInline: boolean): HTMLSpanElement {
@@ -119,6 +134,10 @@ function translateWord(word: string): Promise<TranslationResult> {
     chrome.runtime.sendMessage(
       { type: MESSAGE_TYPES.TRANSLATE_WORD, payload: { word } },
       (response) => {
+        if (chrome.runtime.lastError) {
+          reject(new Error(chrome.runtime.lastError.message));
+          return;
+        }
         if (response?.success) {
           resolve(response.data as TranslationResult);
         } else {
@@ -149,6 +168,7 @@ async function saveWord(state: WordState) {
   chrome.runtime.sendMessage(
     { type: MESSAGE_TYPES.SAVE_VOCABULARY, payload: entry },
     (response) => {
+      if (chrome.runtime.lastError) return;
       if (response?.success) {
         state.saved = true;
         showTooltip(state.element, state.word, state.result, false, null, () => {}, true);
@@ -178,22 +198,23 @@ async function fetchAndInline(span: HTMLElement, state: WordState) {
     } else {
       span.parentNode.appendChild(suffix);
     }
-  } catch {
+  } catch (err) {
     state.loading = false;
+    console.warn(`[LinguaFlow] Inline translation failed for "${state.word}":`, err);
   }
 }
 
 function processTextNode(textNode: Text) {
   if (!settings || !settings.enabled) return;
   if (translatedWords.size >= settings.maxTranslationsPerPage) return;
+  if (!textNode.parentElement || textNode.parentElement.hasAttribute("data-linguaflow")) return;
 
   const text = textNode.textContent || "";
-  if (text.length < 4) return;
+  if (text.length < 3) return;
 
   const parent = textNode.parentElement;
-  if (!parent || parent.hasAttribute("data-linguaflow")) return;
 
-  const wordRegex = /\b[a-zA-Z]{3,}\b/g;
+  const wordRegex = /[a-zA-Z]{3,}/g;
   const matches: Array<{ word: string; index: number }> = [];
   let match: RegExpExecArray | null;
 
@@ -208,6 +229,8 @@ function processTextNode(textNode: Text) {
   }
 
   if (matches.length === 0) return;
+
+  if (!parent) return;
 
   const fragment = document.createDocumentFragment();
   let lastIndex = 0;
@@ -236,28 +259,46 @@ function processTextNode(textNode: Text) {
     fragment.appendChild(document.createTextNode(text.substring(lastIndex)));
   }
 
-  parent.replaceChild(fragment, textNode);
+  try {
+    parent.replaceChild(fragment, textNode);
+  } catch (err) {
+    console.warn("[LinguaFlow] Failed to replace text node:", err);
+    translatedWords.clear();
+  }
 }
 
 function processVisibleContent() {
   if (!settings || !settings.enabled) return;
+  if (isProcessing) return;
+  isProcessing = true;
 
-  const body = document.body;
-  if (!body) return;
+  try {
+    const body = document.body;
+    if (!body) return;
 
-  let count = 0;
-  const maxToProcess = settings.maxTranslationsPerPage - translatedWords.size;
+    const maxToProcess = settings.maxTranslationsPerPage - translatedWords.size;
+    if (maxToProcess <= 0) return;
 
-  for (const textNode of walkTextNodes(body)) {
-    if (count >= maxToProcess) break;
-    const parent = textNode.parentElement;
-    if (!parent || parent.hasAttribute("data-linguaflow")) continue;
+    const textNodes: Text[] = [];
+    for (const textNode of walkTextNodes(body)) {
+      const parent = textNode.parentElement;
+      if (!parent || parent.hasAttribute("data-linguaflow")) continue;
 
-    const rect = (parent as HTMLElement).getBoundingClientRect?.();
-    if (rect && !isElementVisible(rect)) continue;
+      const rect = (parent as HTMLElement).getBoundingClientRect?.();
+      if (rect && !isElementVisible(rect)) continue;
 
-    processTextNode(textNode);
-    count++;
+      textNodes.push(textNode);
+      if (textNodes.length >= maxToProcess) break;
+    }
+
+    for (const textNode of textNodes) {
+      if (translatedWords.size >= settings.maxTranslationsPerPage) break;
+      if (textNode.parentElement && !textNode.parentElement.hasAttribute("data-linguaflow")) {
+        processTextNode(textNode);
+      }
+    }
+  } finally {
+    isProcessing = false;
   }
 }
 
@@ -275,7 +316,7 @@ function scheduleScan(delay = 500) {
   }, delay);
 }
 
-function handleMutations(mutations: MutationRecord[]) {
+function handleMutations() {
   scheduleScan(800);
 }
 
@@ -283,10 +324,17 @@ async function init() {
   injectGlobalStyles();
   settings = await initSettings();
 
-  if (!settings.enabled) return;
+  if (!settings.enabled) {
+    console.log("[LinguaFlow] Extension disabled in settings");
+    return;
+  }
 
-  processVisibleContent();
-  observer = createObserver(handleMutations);
+  console.log(`[LinguaFlow] Initialized — ${settings.targetLanguage} / ${settings.difficulty} / ${settings.displayMode}`);
+
+  setTimeout(() => {
+    processVisibleContent();
+    observer = createObserver(handleMutations);
+  }, 300);
 
   let scrollTimeout: ReturnType<typeof setTimeout>;
   window.addEventListener("scroll", () => {
@@ -296,10 +344,13 @@ async function init() {
 
   chrome.runtime.onMessage.addListener((message) => {
     if (message.type === MESSAGE_TYPES.SETTINGS_UPDATED) {
-      settings = message.payload as UserSettings;
-      if (settings.enabled) {
+      const newSettings = message.payload as UserSettings;
+      const wasEnabled = settings?.enabled;
+      settings = newSettings;
+
+      if (newSettings.enabled && !wasEnabled) {
         processVisibleContent();
-      } else {
+      } else if (!newSettings.enabled && wasEnabled) {
         removeAllTranslations();
       }
     }
@@ -321,6 +372,10 @@ function removeAllTranslations() {
   translatedWords.clear();
   const tip = document.getElementById("linguaflow-tooltip");
   if (tip) tip.remove();
+  const styles = document.getElementById("linguaflow-global-styles");
+  if (styles) styles.remove();
+  const tooltipStyles = document.getElementById("linguaflow-tooltip-styles");
+  if (tooltipStyles) tooltipStyles.remove();
 }
 
 function injectGlobalStyles() {
@@ -332,7 +387,7 @@ function injectGlobalStyles() {
       all: revert;
     }
   `;
-  document.head.appendChild(style);
+  (document.head || document.documentElement).appendChild(style);
 }
 
 if (document.readyState === "loading") {
