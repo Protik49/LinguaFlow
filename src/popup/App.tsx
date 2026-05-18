@@ -95,6 +95,16 @@ export default function App() {
     });
   };
 
+  const forceRescan = () => {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (tabs[0]?.id) {
+        chrome.tabs.sendMessage(tabs[0].id, { type: MESSAGE_TYPES.RESCAN_PAGE }, () => {
+          showStatus("Rescanning page...");
+        });
+      }
+    });
+  };
+
   const clearErrors = () => {
     chrome.runtime.sendMessage({ type: MESSAGE_TYPES.CLEAR_ERRORS }, () => {
       setErrors([]);
@@ -305,7 +315,7 @@ export default function App() {
             </div>
 
             {/* Test Connection */}
-            <div className="border-t border-gray-100 dark:border-gray-800 pt-3">
+            <div className="border-t border-gray-100 dark:border-gray-800 pt-3 space-y-1.5">
               <div className="flex gap-1.5">
                 <button
                   onClick={testConnection}
@@ -315,12 +325,18 @@ export default function App() {
                   {testStatus === "testing" ? "Testing..." : "Test Connection"}
                 </button>
                 <button
-                  onClick={clearCache}
-                  className="flex-1 py-1.5 text-xs font-medium text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800 rounded-lg hover:bg-red-50 dark:hover:bg-red-950 transition-colors"
+                  onClick={forceRescan}
+                  className="flex-1 py-1.5 text-xs font-medium border border-brand-200 dark:border-brand-800 text-brand-600 dark:text-brand-400 rounded-lg hover:bg-brand-50 dark:hover:bg-brand-950 transition-colors"
                 >
-                  Clear Cache
+                  Force Rescan
                 </button>
               </div>
+              <button
+                onClick={clearCache}
+                className="w-full py-1.5 text-xs font-medium text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800 rounded-lg hover:bg-red-50 dark:hover:bg-red-950 transition-colors"
+              >
+                Clear Translation Cache
+              </button>
               {testMsg && (
                 <div className={`mt-1.5 px-2 py-1 rounded text-[10px] font-mono break-all ${
                   testStatus === "ok"

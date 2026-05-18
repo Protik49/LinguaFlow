@@ -2,7 +2,15 @@ import type { TranslationRequest, TranslationResult } from "./types";
 import { getSettings } from "./storage";
 
 const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
-const MODEL = "google/gemma-4-31b-it:free";
+
+// Free models to try in order. If one hits rate limits, we fall back to the next.
+const FREE_MODELS = [
+  "google/gemma-4-31b-it:free",
+  "meta-llama/llama-3.1-8b-instruct:free",
+  "mistralai/mistral-7b-instruct:free",
+];
+
+let currentModelIndex = 0;
 
 function buildSystemPrompt(targetLanguage: string): string {
   return `You are a precise vocabulary translation assistant. Your ONLY task is to translate individual words/phrases and provide concise lexical information.
@@ -75,45 +83,83 @@ export async function translateWord(request: TranslationRequest): Promise<Transl
   const settings = await getSettings();
 
   if (!settings.apiKey) {
-    throw new Error("API key not configured. Please set your OpenRouter API key in extension options.");
+    throw new Error("API key not configured. Go to Setup tab and enter your OpenRouter API key.");
   }
 
-  const response = await fetch(OPENROUTER_API_URL, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${settings.apiKey}`,
-      "Content-Type": "application/json",
-      "HTTP-Referer": "https://linguaflow.extension",
-      "X-Title": "LinguaFlow",
-    },
-    body: JSON.stringify({
-      model: MODEL,
-      messages: [
-        { role: "system", content: buildSystemPrompt(request.targetLanguage) },
-        { role: "user", content: buildUserPrompt(request.word, request.context, request.targetLanguage) },
-      ],
-      temperature: 0.3,
-      max_tokens: 200,
-    }),
-  });
+  const errors: string[] = [];
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`OpenRouter API error (${response.status}): ${errorText}`);
+  for (let i = 0; i < FREE_MODELS.length; i++) {
+    const modelIndex = (currentModelIndex + i) % FREE_MODELS.length;
+    const model = FREE_MODELS[modelIndex];
+
+    try {
+      const response = await fetch(OPENROUTER_API_URL, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${settings.apiKey}`,
+          "Content-Type": "application/json",
+          "HTTP-Referer": "https://linguaflow.extension",
+          "X-Title": "LinguaFlow",
+        },
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: "system", content: buildSystemPrompt(request.targetLanguage) },
+            { role: "user", content: buildUserPrompt(request.word, request.context, request.targetLanguage) },
+          ],
+          temperature: 0.3,
+          max_tokens: 200,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        let parsed: any;
+        try { parsed = JSON.parse(errorText); } catch { /* ignore */ }
+
+        // Check for rate limit
+        if (response.status === 429) {
+          const msg = parsed?.error?.message || errorText;
+          if (msg.includes("rate-limited") || msg.includes("rate limit") || msg.includes("429")) {
+            errors.push(`${model}: rate limited (free tier busy)`);
+            continue; // Try next model
+          }
+        }
+
+        errors.push(`${model}: ${response.status} — ${parsed?.error?.message || errorText}`);
+        continue;
+      }
+
+      const data = await response.json();
+
+      if (!data.choices || data.choices.length === 0) {
+        errors.push(`${model}: no response`);
+        continue;
+      }
+
+      const content = data.choices[0].message?.content || "";
+      const result = parseResponse(content);
+      if (!result) {
+        errors.push(`${model}: failed to parse JSON`);
+        continue;
+      }
+
+      // Remember which model worked for next time
+      currentModelIndex = modelIndex;
+      return result;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      errors.push(`${model}: ${msg}`);
+    }
   }
 
-  const data = await response.json();
-
-  if (!data.choices || data.choices.length === 0) {
-    throw new Error("No translation returned from API");
+  // All models failed
+  const allBusy = errors.every((e) => e.includes("rate limited"));
+  if (allBusy) {
+    throw new Error(
+      "All free models are rate-limited right now. " +
+      "Wait a minute and try again, or add $5 credits to OpenRouter for priority access."
+    );
   }
-
-  const content = data.choices[0].message?.content || "";
-
-  const result = parseResponse(content);
-  if (!result) {
-    throw new Error("Failed to parse translation response");
-  }
-
-  return result;
+  throw new Error(errors.join("; "));
 }

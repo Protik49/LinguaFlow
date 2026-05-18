@@ -52,7 +52,7 @@ async function initSettings(): Promise<UserSettings> {
     enabled: true,
     apiKey: "",
     displayMode: "tooltip",
-    maxTranslationsPerPage: 200,
+    maxTranslationsPerPage: 1000,
   };
 }
 
@@ -251,19 +251,15 @@ function processPageWords() {
     // Collect all text nodes
     const allNodes = collectTextNodes(body);
 
-    // Filter to unprocessed, visible, non-skip nodes
+    // Filter to unprocessed, non-skip nodes
+    // NOTE: we do NOT filter by visibility — process the entire article body
+    // so words are ready even before the user scrolls to them
     const candidates: Text[] = [];
     for (const textNode of allNodes) {
       const parent = textNode.parentElement;
       if (!parent) continue;
       if (parent.closest("[data-linguaflow]")) continue;
       if (isSkipNode(parent)) continue;
-
-      const rect = (parent as HTMLElement).getBoundingClientRect?.();
-      if (rect) {
-        const visible = rect.top < window.innerHeight + 200 && rect.bottom > -200;
-        if (!visible) continue;
-      }
 
       const text = textNode.textContent || "";
       if (text.trim().length < 3) continue;
@@ -428,11 +424,19 @@ async function init() {
     }, 400);
   }, { passive: true });
 
-  chrome.runtime.onMessage.addListener((message) => {
+  chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (message.type === MESSAGE_TYPES.SETTINGS_UPDATED) {
       settings = message.payload as UserSettings;
       if (!settings.enabled) removeAllTranslations();
     }
+    if (message.type === MESSAGE_TYPES.RESCAN_PAGE) {
+      console.log("[LinguaFlow] Force rescan requested from popup");
+      removeAllTranslations();
+      hasScannedOnce = false;
+      processPageWords();
+      sendResponse({ success: true });
+    }
+    return true;
   });
 }
 
