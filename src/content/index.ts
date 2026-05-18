@@ -409,14 +409,16 @@ function createSafeObserver(callback: () => void): MutationObserver {
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   switch (message.type) {
     case MESSAGE_TYPES.GET_PAGE_STATUS:
-      // Respond immediately even if init() hasn't finished
       sendResponse({ success: true, data: { activated: isActivated } });
       return false;
 
     case MESSAGE_TYPES.ACTIVATE_PAGE:
-      activate();
-      sendResponse({ success: true, data: { activated: true } });
-      return false;
+      handleActivate().then(() => {
+        sendResponse({ success: true, data: { activated: true } });
+      }).catch((err) => {
+        sendResponse({ success: false, error: err.message });
+      });
+      return true;
 
     case MESSAGE_TYPES.DEACTIVATE_PAGE:
       deactivate();
@@ -440,6 +442,18 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       return false;
   }
 });
+
+async function handleActivate() {
+  if (!settings) {
+    console.log("[LinguaFlow] Loading settings before activating...");
+    settings = await initSettings();
+  }
+  if (!settings.enabled) {
+    throw new Error("Extension is disabled globally. Enable it via the toggle in the popup.");
+  }
+  console.log(`[LinguaFlow] Activating — ${settings.targetLanguage} / ${settings.difficulty} / ${settings.displayMode}`);
+  activate();
+}
 
 /* ── Init ── */
 
