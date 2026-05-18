@@ -243,26 +243,33 @@ export default function App() {
       </header>
 
       {/* Activation Screen */}
-      {isActiveOnPage === false && (
+      {(isActiveOnPage === false || isActiveOnPage === null) && (
         <div className="flex flex-col items-center justify-center px-6 py-10 space-y-4">
-          <div className="w-12 h-12 rounded-xl bg-brand-100 dark:bg-brand-900 flex items-center justify-center">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#6366f1" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="12" cy="12" r="10" /><path d="M12 16v-4" /><path d="M12 8h.01" />
-            </svg>
-          </div>
-          <div className="text-center">
-            <p className="text-sm font-medium text-gray-900 dark:text-white mb-1">Not active on this page</p>
-            <p className="text-xs text-gray-400 dark:text-gray-500">
-              Click Activate to underline difficult words on this article.
-            </p>
-          </div>
-          <button
-            onClick={activatePage}
-            disabled={isToggling}
-            className="w-full py-2.5 text-sm font-semibold bg-brand-500 hover:bg-brand-600 text-white rounded-xl transition-colors disabled:opacity-50 shadow-sm"
-          >
-            {isToggling ? "Activating..." : "Activate on this page"}
-          </button>
+          {isActiveOnPage === null && (
+            <div className="w-5 h-5 border-2 border-brand-200 border-t-brand-500 rounded-full animate-spin" />
+          )}
+          {isActiveOnPage === false && (
+            <>
+              <div className="w-12 h-12 rounded-xl bg-brand-100 dark:bg-brand-900 flex items-center justify-center">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#6366f1" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="10" /><path d="M12 16v-4" /><path d="M12 8h.01" />
+                </svg>
+              </div>
+              <div className="text-center">
+                <p className="text-sm font-medium text-gray-900 dark:text-white mb-1">Not active on this page</p>
+                <p className="text-xs text-gray-400 dark:text-gray-500">
+                  Click Activate to underline difficult words on this article.
+                </p>
+              </div>
+              <button
+                onClick={activatePage}
+                disabled={isToggling}
+                className="w-full py-2.5 text-sm font-semibold bg-brand-500 hover:bg-brand-600 text-white rounded-xl transition-colors disabled:opacity-50 shadow-sm"
+              >
+                {isToggling ? "Activating..." : "Activate on this page"}
+              </button>
+            </>
+          )}
         </div>
       )}
 

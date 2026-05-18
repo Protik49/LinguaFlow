@@ -404,6 +404,43 @@ function createSafeObserver(callback: () => void): MutationObserver {
   });
 }
 
+/* ── Message handler (registered at top level so it's ready immediately) ── */
+
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  switch (message.type) {
+    case MESSAGE_TYPES.GET_PAGE_STATUS:
+      // Respond immediately even if init() hasn't finished
+      sendResponse({ success: true, data: { activated: isActivated } });
+      return false;
+
+    case MESSAGE_TYPES.ACTIVATE_PAGE:
+      activate();
+      sendResponse({ success: true, data: { activated: true } });
+      return false;
+
+    case MESSAGE_TYPES.DEACTIVATE_PAGE:
+      deactivate();
+      sendResponse({ success: true, data: { activated: false } });
+      return false;
+
+    case MESSAGE_TYPES.RESCAN_PAGE:
+      if (isActivated) {
+        removeAllTranslations();
+        processPageWords();
+      }
+      sendResponse({ success: true });
+      return false;
+
+    case MESSAGE_TYPES.SETTINGS_UPDATED:
+      if (message.payload) {
+        settings = message.payload as UserSettings;
+        if (!settings.enabled) deactivate();
+      }
+      sendResponse({ success: true });
+      return false;
+  }
+});
+
 /* ── Init ── */
 
 async function init() {
@@ -415,37 +452,6 @@ async function init() {
   }
 
   console.log("[LinguaFlow] Loaded. Click the extension icon to activate on this page.");
-
-  chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-    switch (message.type) {
-      case MESSAGE_TYPES.ACTIVATE_PAGE:
-        activate();
-        sendResponse({ success: true, activated: true });
-        return true;
-
-      case MESSAGE_TYPES.DEACTIVATE_PAGE:
-        deactivate();
-        sendResponse({ success: true, activated: false });
-        return true;
-
-      case MESSAGE_TYPES.GET_PAGE_STATUS:
-        sendResponse({ success: true, activated: isActivated });
-        return true;
-
-      case MESSAGE_TYPES.RESCAN_PAGE:
-        if (isActivated) {
-          removeAllTranslations();
-          processPageWords();
-        }
-        sendResponse({ success: true });
-        return true;
-
-      case MESSAGE_TYPES.SETTINGS_UPDATED:
-        settings = message.payload as UserSettings;
-        if (!settings.enabled) deactivate();
-        return true;
-    }
-  });
 }
 
 if (document.readyState === "loading") {
