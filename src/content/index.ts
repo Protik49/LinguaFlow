@@ -1,8 +1,8 @@
 import { MESSAGE_TYPES } from "../shared/constants";
 import type { TranslationResult, UserSettings, VocabularyEntry } from "../shared/types";
 import { shouldTranslate } from "../shared/wordlists";
-import { walkTextNodes, createObserver } from "./utils/dom-scanner";
-import { showTooltip, hideTooltip } from "./components/tooltip";
+import { collectTextNodes, createObserver, isSkipNode } from "./utils/dom-scanner";
+import { showTooltip } from "./components/tooltip";
 import { generateVocabularyId } from "../shared/storage";
 
 interface WordState {
@@ -18,6 +18,8 @@ const wordStateMap = new WeakMap<HTMLElement, WordState>();
 let settings: UserSettings | null = null;
 let observer: MutationObserver | null = null;
 let scanTimeout: ReturnType<typeof setTimeout> | null = null;
+
+/* ── Settings ── */
 
 async function initSettings(): Promise<UserSettings> {
   for (let attempt = 0; attempt < 3; attempt++) {
@@ -35,11 +37,13 @@ async function initSettings(): Promise<UserSettings> {
           }
         });
       });
+      console.log("[LinguaFlow] Settings loaded:", result.targetLanguage, result.difficulty, result.displayMode);
       return result;
     } catch {
       if (attempt < 2) await new Promise((r) => setTimeout(r, 500 * (attempt + 1)));
     }
   }
+  console.warn("[LinguaFlow] Using default settings — background unreachable");
   return {
     targetLanguage: "Bengali",
     difficulty: "intermediate",
@@ -50,16 +54,18 @@ async function initSettings(): Promise<UserSettings> {
   };
 }
 
+/* ── Word wrapping ── */
+
 function createWordSpan(word: string, originalText: string, start: number, end: number): HTMLSpanElement {
   const span = document.createElement("span");
   span.setAttribute("data-linguaflow", "word");
   span.setAttribute("data-lf-word", word);
   span.textContent = originalText.substring(start, end);
+  // NOTE: we do NOT set all: revert — it breaks dark-mode blogs by forcing black text
   span.style.cssText = `
     cursor: pointer;
     border-bottom: 1px dotted #818cf8;
     transition: background 0.15s;
-    position: relative;
   `;
 
   const state: WordState = {
@@ -74,11 +80,14 @@ function createWordSpan(word: string, originalText: string, start: number, end: 
 
   span.addEventListener("click", (e) => {
     e.stopPropagation();
+    e.preventDefault();
     handleWordClick(span, state);
   });
 
   return span;
 }
+
+/* ── Click handler ── */
 
 async function handleWordClick(span: HTMLElement, state: WordState) {
   if (state.loading) return;
@@ -97,7 +106,7 @@ async function handleWordClick(span: HTMLElement, state: WordState) {
     state.loading = false;
     state.error = null;
 
-    if (settings?.displayMode === "inline") {
+    if (settings?.displayMode === "inline" && result.translation) {
       insertInlineTranslation(span, result.translation);
     }
 
@@ -124,6 +133,8 @@ function insertInlineTranslation(span: HTMLElement, translation: string) {
   }
 }
 
+/* ── Translation ── */
+
 function translateWord(word: string): Promise<TranslationResult> {
   return new Promise((resolve, reject) => {
     try {
@@ -141,11 +152,13 @@ function translateWord(word: string): Promise<TranslationResult> {
           }
         }
       );
-    } catch (err) {
+    } catch {
       reject(new Error("Extension context lost"));
     }
   });
 }
+
+/* ── Vocabulary save ── */
 
 async function saveWord(state: WordState) {
   if (!state.result || !settings) return;
@@ -175,6 +188,8 @@ async function saveWord(state: WordState) {
     }
   );
 }
+
+/* ── DOM processing ── */
 
 function processTextNode(textNode: Text) {
   if (!settings || !settings.enabled) return;
@@ -219,7 +234,7 @@ function processTextNode(textNode: Text) {
   try {
     parent.replaceChild(fragment, textNode);
   } catch {
-    // Node may have been removed
+    // Node may have been removed by page JS
   }
 }
 
@@ -229,56 +244,87 @@ function processPageWords() {
   const body = document.body;
   if (!body) return;
 
-  let count = 0;
-  for (const textNode of walkTextNodes(body)) {
-    if (count >= settings.maxTranslationsPerPage) break;
-    if (textNode.parentElement && !textNode.parentElement.hasAttribute("data-linguaflow")) {
-      const rect = (textNode.parentElement as HTMLElement).getBoundingClientRect?.();
-      if (rect && isElementVisible(rect)) {
-        processTextNode(textNode);
-        count++;
-      }
+  // STEP 1: Collect ALL text nodes first (don't modify DOM yet)
+  const allNodes = collectTextNodes(body);
+  console.log(`[LinguaFlow] Collected ${allNodes.length} text nodes`);
+
+  // STEP 2: Filter to visible, non-skip nodes
+  const candidates: Text[] = [];
+  for (const textNode of allNodes) {
+    const parent = textNode.parentElement;
+    if (!parent) continue;
+    if (parent.hasAttribute("data-linguaflow")) continue;
+    if (isSkipNode(parent)) continue;
+
+    const rect = (parent as HTMLElement).getBoundingClientRect?.();
+    if (rect) {
+      const visible = rect.top < window.innerHeight + 200 && rect.bottom > -200;
+      if (!visible) continue;
     }
+
+    const text = textNode.textContent || "";
+    if (text.trim().length < 3) continue;
+
+    candidates.push(textNode);
+    if (candidates.length >= settings.maxTranslationsPerPage) break;
   }
+
+  console.log(`[LinguaFlow] ${candidates.length} candidate text nodes to process`);
+
+  // STEP 3: Process each text node (now safe to modify DOM)
+  let wrappedCount = 0;
+  for (const textNode of candidates) {
+    const parent = textNode.parentElement;
+    if (!parent || parent.hasAttribute("data-linguaflow")) continue;
+    processTextNode(textNode);
+    wrappedCount++;
+  }
+
+  console.log(`[LinguaFlow] Wrapped words in ${wrappedCount} text nodes`);
+  updateIndicator(wrappedCount);
 }
 
-function isElementVisible(rect: DOMRect): boolean {
-  return rect.top < window.innerHeight + 200 && rect.bottom > -200;
+/* ── Floating indicator ── */
+
+function updateIndicator(wrappedCount: number) {
+  let badge = document.getElementById("linguaflow-indicator");
+  if (!badge) {
+    badge = document.createElement("div");
+    badge.id = "linguaflow-indicator";
+    badge.style.cssText = `
+      position: fixed;
+      bottom: 16px;
+      right: 16px;
+      z-index: 2147483647;
+      background: #4f46e5;
+      color: white;
+      padding: 6px 12px;
+      border-radius: 20px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      font-size: 12px;
+      font-weight: 500;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      cursor: default;
+      user-select: none;
+      opacity: 0;
+      transform: translateY(8px);
+      transition: opacity 0.3s, transform 0.3s;
+    `;
+    document.body.appendChild(badge);
+    // Force reflow
+    badge.offsetHeight;
+    badge.style.opacity = "1";
+    badge.style.transform = "translateY(0)";
+  }
+  badge.textContent = `LinguaFlow · ${wrappedCount} words ready · click to translate`;
 }
 
-function scheduleScan(delay = 300) {
-  if (scanTimeout) clearTimeout(scanTimeout);
-  scanTimeout = setTimeout(processPageWords, delay);
+function removeIndicator() {
+  const badge = document.getElementById("linguaflow-indicator");
+  if (badge) badge.remove();
 }
 
-function handleMutations() {
-  scheduleScan(600);
-}
-
-async function init() {
-  injectGlobalStyles();
-  settings = await initSettings();
-
-  if (!settings.enabled) return;
-
-  console.log(`[LinguaFlow] Ready — click any underlined word to translate`);
-
-  setTimeout(processPageWords, 400);
-
-  observer = createObserver(handleMutations);
-
-  window.addEventListener("scroll", () => {
-    clearTimeout(scanTimeout);
-    scanTimeout = setTimeout(processPageWords, 400);
-  }, { passive: true });
-
-  chrome.runtime.onMessage.addListener((message) => {
-    if (message.type === MESSAGE_TYPES.SETTINGS_UPDATED) {
-      settings = message.payload as UserSettings;
-      if (!settings.enabled) removeAllTranslations();
-    }
-  });
-}
+/* ── Cleanup ── */
 
 function removeAllTranslations() {
   const spans = document.querySelectorAll("[data-linguaflow=word]");
@@ -292,14 +338,40 @@ function removeAllTranslations() {
   });
   const tip = document.getElementById("linguaflow-tooltip");
   if (tip) tip.remove();
+  removeIndicator();
 }
 
-function injectGlobalStyles() {
-  if (document.getElementById("linguaflow-global-styles")) return;
-  const style = document.createElement("style");
-  style.id = "linguaflow-global-styles";
-  style.textContent = `[data-linguaflow] { all: revert; }`;
-  (document.head || document.documentElement).appendChild(style);
+/* ── Init ── */
+
+async function init() {
+  settings = await initSettings();
+
+  if (!settings.enabled) {
+    console.log("[LinguaFlow] Extension disabled");
+    return;
+  }
+
+  console.log(`[LinguaFlow] Starting scan… mode=${settings.displayMode} lang=${settings.targetLanguage}`);
+
+  setTimeout(() => {
+    processPageWords();
+    observer = createObserver(() => {
+      console.log("[LinguaFlow] DOM changed, rescanning…");
+      processPageWords();
+    });
+  }, 400);
+
+  window.addEventListener("scroll", () => {
+    clearTimeout(scanTimeout);
+    scanTimeout = setTimeout(processPageWords, 400);
+  }, { passive: true });
+
+  chrome.runtime.onMessage.addListener((message) => {
+    if (message.type === MESSAGE_TYPES.SETTINGS_UPDATED) {
+      settings = message.payload as UserSettings;
+      if (!settings.enabled) removeAllTranslations();
+    }
+  });
 }
 
 if (document.readyState === "loading") {

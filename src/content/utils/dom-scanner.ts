@@ -28,34 +28,21 @@ export function isSkipNode(node: Node): boolean {
   return false;
 }
 
-export function* walkTextNodes(root: Node): Generator<Text> {
-  const walker = document.createTreeWalker(
-    root,
-    NodeFilter.SHOW_TEXT,
-    {
-      acceptNode: (node: Node) => {
-        const text = node.textContent;
-        if (!text || text.trim().length < 3) {
-          return NodeFilter.FILTER_SKIP;
-        }
-
-        let parent: Element | null = node.parentElement;
-        while (parent && parent !== root) {
-          if (isSkipNode(parent)) {
-            return NodeFilter.FILTER_REJECT;
-          }
-          parent = parent.parentElement;
-        }
-
-        return NodeFilter.FILTER_ACCEPT;
-      },
-    }
-  );
-
+/**
+ * Collect all text nodes from the DOM.
+ * We do NOT use a TreeWalker filter callback because:
+ * 1. Arrow functions in filter callbacks break in Safari
+ * 2. Modifying DOM during iteration corrupts the walker
+ * Instead we collect ALL text nodes first, then filter manually.
+ */
+export function collectTextNodes(root: Node): Text[] {
+  const nodes: Text[] = [];
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
   let node: Node | null;
   while ((node = walker.nextNode())) {
-    yield node as Text;
+    nodes.push(node as Text);
   }
+  return nodes;
 }
 
 export function createObserver(callback: () => void): MutationObserver {
@@ -95,13 +82,4 @@ export function createObserver(callback: () => void): MutationObserver {
   });
 
   return observer;
-}
-
-export function isInsideSkipElement(node: Node): boolean {
-  let parent: Element | null = node.parentElement;
-  while (parent) {
-    if (isSkipNode(parent)) return true;
-    parent = parent.parentElement;
-  }
-  return false;
 }
