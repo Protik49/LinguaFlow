@@ -16,27 +16,9 @@ export const MESSAGE_TYPES = {
 } as const;
 
 export const SKIP_TAGS = new Set([
-  "SCRIPT",
-  "STYLE",
-  "CODE",
-  "PRE",
-  "TEXTAREA",
-  "INPUT",
-  "SELECT",
-  "OPTION",
-  "NOSCRIPT",
-  "IFRAME",
-  "SVG",
-  "CANVAS",
-  "VIDEO",
-  "AUDIO",
-  "OBJECT",
-  "EMBED",
-  "MATH",
-  "HEAD",
-  "LINK",
-  "META",
-  "TITLE",
+  "SCRIPT", "STYLE", "CODE", "PRE", "TEXTAREA", "INPUT", "SELECT", "OPTION",
+  "NOSCRIPT", "IFRAME", "SVG", "CANVAS", "VIDEO", "AUDIO", "OBJECT",
+  "EMBED", "MATH", "HEAD", "LINK", "META", "TITLE", "A",
 ]);
 
 export const SKIP_CLASSES = [
