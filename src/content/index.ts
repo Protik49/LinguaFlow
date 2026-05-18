@@ -1,7 +1,7 @@
 import { MESSAGE_TYPES } from "../shared/constants";
 import type { TranslationResult, UserSettings, VocabularyEntry } from "../shared/types";
 import { shouldTranslate } from "../shared/wordlists";
-import { collectTextNodes, createObserver, isSkipNode } from "./utils/dom-scanner";
+import { collectTextNodes, isSkipNode } from "./utils/dom-scanner";
 import { showTooltip } from "./components/tooltip";
 import { generateVocabularyId } from "../shared/storage";
 
@@ -18,6 +18,8 @@ const wordStateMap = new WeakMap<HTMLElement, WordState>();
 let settings: UserSettings | null = null;
 let observer: MutationObserver | null = null;
 let scanTimeout: ReturnType<typeof setTimeout> | null = null;
+let isScanning = false;
+let hasScannedOnce = false;
 
 /* ── Settings ── */
 
@@ -61,7 +63,6 @@ function createWordSpan(word: string, originalText: string, start: number, end: 
   span.setAttribute("data-linguaflow", "word");
   span.setAttribute("data-lf-word", word);
   span.textContent = originalText.substring(start, end);
-  // NOTE: we do NOT set all: revert — it breaks dark-mode blogs by forcing black text
   span.style.cssText = `
     cursor: pointer;
     border-bottom: 1px dotted #818cf8;
@@ -198,7 +199,7 @@ function processTextNode(textNode: Text) {
   if (text.length < 3) return;
 
   const parent = textNode.parentElement;
-  if (!parent || parent.hasAttribute("data-linguaflow")) return;
+  if (!parent || parent.closest("[data-linguaflow]")) return;
 
   const wordRegex = /[a-zA-Z]{3,}/g;
   const matches: Array<{ word: string; index: number }> = [];
@@ -240,53 +241,61 @@ function processTextNode(textNode: Text) {
 
 function processPageWords() {
   if (!settings || !settings.enabled) return;
+  if (isScanning) return;
+  isScanning = true;
 
-  const body = document.body;
-  if (!body) return;
+  try {
+    const body = document.body;
+    if (!body) return;
 
-  // STEP 1: Collect ALL text nodes first (don't modify DOM yet)
-  const allNodes = collectTextNodes(body);
-  console.log(`[LinguaFlow] Collected ${allNodes.length} text nodes`);
+    // Collect all text nodes
+    const allNodes = collectTextNodes(body);
 
-  // STEP 2: Filter to visible, non-skip nodes
-  const candidates: Text[] = [];
-  for (const textNode of allNodes) {
-    const parent = textNode.parentElement;
-    if (!parent) continue;
-    if (parent.hasAttribute("data-linguaflow")) continue;
-    if (isSkipNode(parent)) continue;
+    // Filter to unprocessed, visible, non-skip nodes
+    const candidates: Text[] = [];
+    for (const textNode of allNodes) {
+      const parent = textNode.parentElement;
+      if (!parent) continue;
+      if (parent.closest("[data-linguaflow]")) continue;
+      if (isSkipNode(parent)) continue;
 
-    const rect = (parent as HTMLElement).getBoundingClientRect?.();
-    if (rect) {
-      const visible = rect.top < window.innerHeight + 200 && rect.bottom > -200;
-      if (!visible) continue;
+      const rect = (parent as HTMLElement).getBoundingClientRect?.();
+      if (rect) {
+        const visible = rect.top < window.innerHeight + 200 && rect.bottom > -200;
+        if (!visible) continue;
+      }
+
+      const text = textNode.textContent || "";
+      if (text.trim().length < 3) continue;
+
+      candidates.push(textNode);
+      if (candidates.length >= settings.maxTranslationsPerPage) break;
     }
 
-    const text = textNode.textContent || "";
-    if (text.trim().length < 3) continue;
+    if (candidates.length === 0) return;
 
-    candidates.push(textNode);
-    if (candidates.length >= settings.maxTranslationsPerPage) break;
+    // Process each text node (now safe to modify DOM)
+    let wrappedCount = 0;
+    for (const textNode of candidates) {
+      const parent = textNode.parentElement;
+      if (!parent || parent.closest("[data-linguaflow]")) continue;
+      processTextNode(textNode);
+      wrappedCount++;
+    }
+
+    if (wrappedCount > 0) {
+      console.log(`[LinguaFlow] Wrapped ${wrappedCount} text nodes`);
+      updateIndicator();
+    }
+  } finally {
+    isScanning = false;
+    hasScannedOnce = true;
   }
-
-  console.log(`[LinguaFlow] ${candidates.length} candidate text nodes to process`);
-
-  // STEP 3: Process each text node (now safe to modify DOM)
-  let wrappedCount = 0;
-  for (const textNode of candidates) {
-    const parent = textNode.parentElement;
-    if (!parent || parent.hasAttribute("data-linguaflow")) continue;
-    processTextNode(textNode);
-    wrappedCount++;
-  }
-
-  console.log(`[LinguaFlow] Wrapped words in ${wrappedCount} text nodes`);
-  updateIndicator(wrappedCount);
 }
 
-/* ── Floating indicator ── */
+/* ── Floating indicator (create once, never mutate body again) ── */
 
-function updateIndicator(wrappedCount: number) {
+function updateIndicator() {
   let badge = document.getElementById("linguaflow-indicator");
   if (!badge) {
     badge = document.createElement("div");
@@ -311,12 +320,12 @@ function updateIndicator(wrappedCount: number) {
       transition: opacity 0.3s, transform 0.3s;
     `;
     document.body.appendChild(badge);
-    // Force reflow
     badge.offsetHeight;
     badge.style.opacity = "1";
     badge.style.transform = "translateY(0)";
   }
-  badge.textContent = `LinguaFlow · ${wrappedCount} words ready · click to translate`;
+  const wordCount = document.querySelectorAll("[data-linguaflow=word]").length;
+  badge.textContent = `LinguaFlow · ${wordCount} words ready · click to translate`;
 }
 
 function removeIndicator() {
@@ -341,6 +350,50 @@ function removeAllTranslations() {
   removeIndicator();
 }
 
+/* ── MutationObserver that ignores our own mutations ── */
+
+function createSafeObserver(callback: () => void): MutationObserver {
+  let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+  return new MutationObserver((mutations) => {
+    // Ignore any mutation that originates from LinguaFlow elements
+    const relevant = mutations.some((m) => {
+      // Check added nodes
+      for (const node of m.addedNodes) {
+        if (node.nodeType === Node.TEXT_NODE) {
+          // Text node added — check if it's inside our element
+          const parent = (node as Text).parentElement;
+          if (parent && parent.closest("[data-linguaflow]")) continue;
+          if (node.textContent && node.textContent.trim().length >= 3) return true;
+        }
+        if (node.nodeType === Node.ELEMENT_NODE) {
+          const el = node as Element;
+          // Skip our own elements entirely
+          if (el.id === "linguaflow-indicator") continue;
+          if (el.id === "linguaflow-tooltip") continue;
+          if (el.hasAttribute("data-linguaflow")) continue;
+          if (el.closest("[data-linguaflow]")) continue;
+          return true;
+        }
+      }
+      // Check removed nodes
+      for (const node of m.removedNodes) {
+        if (node.nodeType === Node.TEXT_NODE) {
+          const parent = m.target as Element;
+          if (parent && parent.closest("[data-linguaflow]")) continue;
+          if (node.textContent && node.textContent.trim().length >= 3) return true;
+        }
+      }
+      return false;
+    });
+
+    if (relevant) {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(callback, 800);
+    }
+  });
+}
+
 /* ── Init ── */
 
 async function init() {
@@ -355,15 +408,24 @@ async function init() {
 
   setTimeout(() => {
     processPageWords();
-    observer = createObserver(() => {
-      console.log("[LinguaFlow] DOM changed, rescanning…");
+
+    observer = createSafeObserver(() => {
+      if (!hasScannedOnce) return;
       processPageWords();
+    });
+
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+      characterData: true,
     });
   }, 400);
 
   window.addEventListener("scroll", () => {
     clearTimeout(scanTimeout);
-    scanTimeout = setTimeout(processPageWords, 400);
+    scanTimeout = setTimeout(() => {
+      if (hasScannedOnce) processPageWords();
+    }, 400);
   }, { passive: true });
 
   chrome.runtime.onMessage.addListener((message) => {
