@@ -17,9 +17,8 @@ interface WordState {
 const wordStateMap = new WeakMap<HTMLElement, WordState>();
 let settings: UserSettings | null = null;
 let observer: MutationObserver | null = null;
-let scanTimeout: ReturnType<typeof setTimeout> | null = null;
 let isScanning = false;
-let hasScannedOnce = false;
+let isActivated = false;
 
 /* ── Settings ── */
 
@@ -39,13 +38,11 @@ async function initSettings(): Promise<UserSettings> {
           }
         });
       });
-      console.log("[LinguaFlow] Settings loaded:", result.targetLanguage, result.difficulty, result.displayMode);
       return result;
     } catch {
       if (attempt < 2) await new Promise((r) => setTimeout(r, 500 * (attempt + 1)));
     }
   }
-  console.warn("[LinguaFlow] Using default settings — background unreachable");
   return {
     targetLanguage: "Bengali",
     difficulty: "intermediate",
@@ -54,6 +51,34 @@ async function initSettings(): Promise<UserSettings> {
     displayMode: "tooltip",
     maxTranslationsPerPage: 1000,
   };
+}
+
+/* ── Activation ── */
+
+function activate() {
+  if (isActivated) return;
+  isActivated = true;
+  console.log("[LinguaFlow] Activated on this page");
+  processPageWords();
+
+  observer = createSafeObserver(() => {
+    if (isActivated) processPageWords();
+  });
+  observer.observe(document.body, {
+    childList: true,
+    subtree: true,
+    characterData: true,
+  });
+}
+
+function deactivate() {
+  isActivated = false;
+  removeAllTranslations();
+  if (observer) {
+    observer.disconnect();
+    observer = null;
+  }
+  console.log("[LinguaFlow] Deactivated on this page");
 }
 
 /* ── Word wrapping ── */
@@ -240,7 +265,7 @@ function processTextNode(textNode: Text) {
 }
 
 function processPageWords() {
-  if (!settings || !settings.enabled) return;
+  if (!settings || !settings.enabled || !isActivated) return;
   if (isScanning) return;
   isScanning = true;
 
@@ -248,13 +273,9 @@ function processPageWords() {
     const body = document.body;
     if (!body) return;
 
-    // Collect all text nodes
     const allNodes = collectTextNodes(body);
-
-    // Filter to unprocessed, non-skip nodes
-    // NOTE: we do NOT filter by visibility — process the entire article body
-    // so words are ready even before the user scrolls to them
     const candidates: Text[] = [];
+
     for (const textNode of allNodes) {
       const parent = textNode.parentElement;
       if (!parent) continue;
@@ -270,7 +291,6 @@ function processPageWords() {
 
     if (candidates.length === 0) return;
 
-    // Process each text node (now safe to modify DOM)
     let wrappedCount = 0;
     for (const textNode of candidates) {
       const parent = textNode.parentElement;
@@ -285,11 +305,10 @@ function processPageWords() {
     }
   } finally {
     isScanning = false;
-    hasScannedOnce = true;
   }
 }
 
-/* ── Floating indicator (create once, never mutate body again) ── */
+/* ── Floating indicator ── */
 
 function updateIndicator() {
   let badge = document.getElementById("linguaflow-indicator");
@@ -352,19 +371,15 @@ function createSafeObserver(callback: () => void): MutationObserver {
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
   return new MutationObserver((mutations) => {
-    // Ignore any mutation that originates from LinguaFlow elements
     const relevant = mutations.some((m) => {
-      // Check added nodes
       for (const node of m.addedNodes) {
         if (node.nodeType === Node.TEXT_NODE) {
-          // Text node added — check if it's inside our element
           const parent = (node as Text).parentElement;
           if (parent && parent.closest("[data-linguaflow]")) continue;
           if (node.textContent && node.textContent.trim().length >= 3) return true;
         }
         if (node.nodeType === Node.ELEMENT_NODE) {
           const el = node as Element;
-          // Skip our own elements entirely
           if (el.id === "linguaflow-indicator") continue;
           if (el.id === "linguaflow-tooltip") continue;
           if (el.hasAttribute("data-linguaflow")) continue;
@@ -372,7 +387,6 @@ function createSafeObserver(callback: () => void): MutationObserver {
           return true;
         }
       }
-      // Check removed nodes
       for (const node of m.removedNodes) {
         if (node.nodeType === Node.TEXT_NODE) {
           const parent = m.target as Element;
@@ -396,47 +410,41 @@ async function init() {
   settings = await initSettings();
 
   if (!settings.enabled) {
-    console.log("[LinguaFlow] Extension disabled");
+    console.log("[LinguaFlow] Extension disabled globally");
     return;
   }
 
-  console.log(`[LinguaFlow] Starting scan… mode=${settings.displayMode} lang=${settings.targetLanguage}`);
-
-  setTimeout(() => {
-    processPageWords();
-
-    observer = createSafeObserver(() => {
-      if (!hasScannedOnce) return;
-      processPageWords();
-    });
-
-    observer.observe(document.body, {
-      childList: true,
-      subtree: true,
-      characterData: true,
-    });
-  }, 400);
-
-  window.addEventListener("scroll", () => {
-    clearTimeout(scanTimeout);
-    scanTimeout = setTimeout(() => {
-      if (hasScannedOnce) processPageWords();
-    }, 400);
-  }, { passive: true });
+  console.log("[LinguaFlow] Loaded. Click the extension icon to activate on this page.");
 
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-    if (message.type === MESSAGE_TYPES.SETTINGS_UPDATED) {
-      settings = message.payload as UserSettings;
-      if (!settings.enabled) removeAllTranslations();
+    switch (message.type) {
+      case MESSAGE_TYPES.ACTIVATE_PAGE:
+        activate();
+        sendResponse({ success: true, activated: true });
+        return true;
+
+      case MESSAGE_TYPES.DEACTIVATE_PAGE:
+        deactivate();
+        sendResponse({ success: true, activated: false });
+        return true;
+
+      case MESSAGE_TYPES.GET_PAGE_STATUS:
+        sendResponse({ success: true, activated: isActivated });
+        return true;
+
+      case MESSAGE_TYPES.RESCAN_PAGE:
+        if (isActivated) {
+          removeAllTranslations();
+          processPageWords();
+        }
+        sendResponse({ success: true });
+        return true;
+
+      case MESSAGE_TYPES.SETTINGS_UPDATED:
+        settings = message.payload as UserSettings;
+        if (!settings.enabled) deactivate();
+        return true;
     }
-    if (message.type === MESSAGE_TYPES.RESCAN_PAGE) {
-      console.log("[LinguaFlow] Force rescan requested from popup");
-      removeAllTranslations();
-      hasScannedOnce = false;
-      processPageWords();
-      sendResponse({ success: true });
-    }
-    return true;
   });
 }
 
