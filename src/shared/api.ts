@@ -117,37 +117,34 @@ async function callOpenRouter(apiKey: string, request: TranslationRequest): Prom
 /* ── Gemini API ── */
 
 async function callGemini(apiKey: string, request: TranslationRequest): Promise<TranslationResult> {
-  const systemInstruction = `You are a precise vocabulary translation assistant. Translate individual words/phrases and provide concise lexical information.
+  const userPrompt = `Translate the word "${request.word}" to ${request.targetLanguage}.
 
-Respond with ONLY a valid JSON object. Do NOT wrap it in markdown code fences. Output ONLY the raw JSON:
-{"translation":"translation in ${request.targetLanguage}","definition":"brief definition in ${request.targetLanguage} (max 10 words)","pronunciation":"pronunciation guide for the ORIGINAL word","synonym":"one synonym or similar word in ${request.targetLanguage}, or empty string if none"}
+Context: ${request.context || "None"}
 
-Rules:
-- Context matters: choose the translation that fits the given context
-- Keep all values concise (under 15 words each)
-- Output ONLY the JSON object, nothing else — no markdown, no explanation
-- If the word is very common and has no meaningful translation value, set translation to empty string`;
-
-  const userPrompt = `Word: "${request.word}"
-Context: "${request.context || "No context provided"}"
-Translate to: ${request.targetLanguage}
-
-Respond with ONLY the JSON object, nothing else.`;
+Return ONLY this exact JSON format, nothing else:
+{"translation":"...","definition":"...","pronunciation":"...","synonym":"..."}`;
 
   const response = await fetch(`${GEMINI_URL}?key=${apiKey}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      systemInstruction: {
-        parts: [{ text: systemInstruction }],
-      },
       contents: [{
-        role: "user",
         parts: [{ text: userPrompt }],
       }],
       generationConfig: {
-        temperature: 0.3,
+        temperature: 0.1,
         maxOutputTokens: 200,
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: "object",
+          properties: {
+            translation: { type: "string" },
+            definition: { type: "string" },
+            pronunciation: { type: "string" },
+            synonym: { type: "string" },
+          },
+          required: ["translation", "definition", "pronunciation", "synonym"],
+        },
       },
     }),
   });
@@ -164,11 +161,7 @@ Respond with ONLY the JSON object, nothing else.`;
   }
 
   const data = await response.json();
-  
-  // Log raw response for debugging
-  console.log("[Gemini] Raw response:", JSON.stringify(data).substring(0, 500));
 
-  // Check for error in response
   if (data.error) {
     throw new Error(`Gemini API: ${data.error.message || JSON.stringify(data.error)}`);
   }
