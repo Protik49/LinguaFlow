@@ -1,19 +1,12 @@
 import type { TranslationRequest, TranslationResult } from "./types";
 import { getSettings } from "./storage";
 
-const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
-const KEY_INFO_URL = "https://openrouter.ai/api/v1/key";
+/* ── API Endpoints ── */
 
-// Free models to try. Order rotates so one busy model doesn't block others.
-const FREE_MODELS = [
-  "google/gemma-4-31b-it:free",
-  "meta-llama/llama-3.1-8b-instruct:free",
-  "mistralai/mistral-7b-instruct:free",
-];
+const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
+const GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemma-2-9b-it:generateContent";
 
-let currentModelIndex = 0;
-// Track models that returned 429 so we skip them temporarily
-const throttledModels = new Map<string, number>();
+/* ── Prompts ── */
 
 function buildSystemPrompt(targetLanguage: string): string {
   return `You are a precise vocabulary translation assistant. Your ONLY task is to translate individual words/phrases and provide concise lexical information.
@@ -33,6 +26,8 @@ function buildUserPrompt(word: string, context: string, targetLanguage: string):
 Context: "${context || "No context provided"}"
 Translate to: ${targetLanguage}`;
 }
+
+/* ── JSON Parser ── */
 
 function parseResponse(content: string): TranslationResult | null {
   let json = content.trim();
@@ -72,8 +67,10 @@ function parseResponse(content: string): TranslationResult | null {
   return null;
 }
 
-async function callModel(apiKey: string, model: string, request: TranslationRequest): Promise<TranslationResult> {
-  const response = await fetch(OPENROUTER_API_URL, {
+/* ── OpenRouter API ── */
+
+async function callOpenRouter(apiKey: string, request: TranslationRequest): Promise<TranslationResult> {
+  const response = await fetch(OPENROUTER_URL, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${apiKey}`,
@@ -82,7 +79,7 @@ async function callModel(apiKey: string, model: string, request: TranslationRequ
       "X-Title": "LinguaFlow",
     },
     body: JSON.stringify({
-      model,
+      model: "google/gemma-2-9b-it:free",
       messages: [
         { role: "system", content: buildSystemPrompt(request.targetLanguage) },
         { role: "user", content: buildUserPrompt(request.word, request.context, request.targetLanguage) },
@@ -97,100 +94,78 @@ async function callModel(apiKey: string, model: string, request: TranslationRequ
     let parsed: any;
     try { parsed = JSON.parse(errorText); } catch { /* ignore */ }
 
-    // 429 — rate limit. Honor Retry-After header
     if (response.status === 429) {
       const retryAfter = parseInt(response.headers.get("Retry-After") || "0", 10);
-      // Mark this model as throttled
-      throttledModels.set(model, Date.now() + (retryAfter > 0 ? retryAfter * 1000 : 10000));
-
       const waitMsg = retryAfter > 0
         ? `Retry in ${retryAfter}s`
-        : "Free tier daily limit reached (200 req/day without credits, 1000 with $5+)";
-      throw new Error(`${model}: ${waitMsg}`);
+        : "Free tier daily limit reached. Add credits or switch to Gemini API in Setup.";
+      throw new Error(waitMsg);
     }
-
-    // 402 — out of credits
     if (response.status === 402) {
-      throw new Error(`${model}: Out of credits. Add funds at openrouter.ai/credits`);
+      throw new Error("OpenRouter: out of credits. Add funds at openrouter.ai/credits");
     }
-
-    throw new Error(`${model}: ${response.status} — ${parsed?.error?.message || errorText}`);
+    throw new Error(parsed?.error?.message || `OpenRouter error ${response.status}`);
   }
 
   const data = await response.json();
-  if (!data.choices || data.choices.length === 0) {
-    throw new Error(`${model}: no response`);
-  }
-
-  const content = data.choices[0].message?.content || "";
+  const content = data.choices?.[0]?.message?.content || "";
   const result = parseResponse(content);
-  if (!result) {
-    throw new Error(`${model}: failed to parse JSON`);
-  }
-
+  if (!result) throw new Error("Failed to parse translation response");
   return result;
 }
 
-function pickModel(): string | null {
-  const now = Date.now();
+/* ── Gemini API ── */
 
-  // Try up to all models, skipping ones currently throttled
-  for (let i = 0; i < FREE_MODELS.length; i++) {
-    const modelIndex = (currentModelIndex + i) % FREE_MODELS.length;
-    const model = FREE_MODELS[modelIndex];
-    const throttledUntil = throttledModels.get(model);
+async function callGemini(apiKey: string, request: TranslationRequest): Promise<TranslationResult> {
+  const prompt = `${buildSystemPrompt(request.targetLanguage)}\n\n${buildUserPrompt(request.word, request.context, request.targetLanguage)}`;
 
-    if (!throttledUntil || now >= throttledUntil) {
-      // Clear expired throttle
-      if (throttledUntil) throttledModels.delete(model);
-      currentModelIndex = modelIndex;
-      return model;
+  const response = await fetch(`${GEMINI_URL}?key=${apiKey}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      contents: [{
+        parts: [{ text: prompt }],
+      }],
+      generationConfig: {
+        temperature: 0.3,
+        maxOutputTokens: 200,
+      },
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    let parsed: any;
+    try { parsed = JSON.parse(errorText); } catch { /* ignore */ }
+
+    if (response.status === 429) {
+      throw new Error("Gemini API: rate limited. Wait and retry, or switch to OpenRouter in Setup.");
     }
+    throw new Error(parsed?.error?.message || `Gemini API error ${response.status}`);
   }
 
-  return null; // All models throttled
+  const data = await response.json();
+  const content = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+  const result = parseResponse(content);
+  if (!result) throw new Error("Failed to parse Gemini response");
+  return result;
 }
+
+/* ── Main translate function ── */
 
 export async function translateWord(request: TranslationRequest): Promise<TranslationResult> {
   const settings = await getSettings();
 
-  if (!settings.apiKey) {
-    throw new Error("API key not configured. Go to Setup tab and enter your OpenRouter API key.");
-  }
-
-  const errors: string[] = [];
-  let attempts = 0;
-
-  while (attempts < FREE_MODELS.length) {
-    const model = pickModel();
-    if (!model) break; // All throttled
-
-    try {
-      const result = await callModel(settings.apiKey, model, request);
-      currentModelIndex = FREE_MODELS.indexOf(model);
-      return result;
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      errors.push(msg);
-      attempts++;
-      // If first model was throttled, immediately try the next
+  if (settings.apiProvider === "gemini") {
+    if (!settings.geminiApiKey) {
+      throw new Error("Gemini API key not configured. Get one at aistudio.google.com/apikey");
     }
+    return callGemini(settings.geminiApiKey, request);
   }
 
-  // All models failed — give user the full picture
-  const throttled = Array.from(throttledModels.entries())
-    .filter(([, until]) => until > Date.now())
-    .map(([model, until]) => {
-      const secs = Math.ceil((until - Date.now()) / 1000);
-      return `${model.split("/").pop()}: ${secs}s remaining`;
-    });
-
-  if (throttled.length > 0) {
-    throw new Error(
-      `All free models are rate-limited. Wait times: ${throttled.join(", ")}. ` +
-      `Free tier allows ~200 req/day. Add $5+ credits for 1000/day and priority access.`
-    );
+  // Default: OpenRouter
+  if (!settings.openrouterApiKey) {
+    throw new Error("OpenRouter API key not configured. Go to Setup tab and enter your key.");
   }
-
-  throw new Error(errors.join("; "));
+  return callOpenRouter(settings.openrouterApiKey, request);
 }

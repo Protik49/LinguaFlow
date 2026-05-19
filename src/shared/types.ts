@@ -25,11 +25,15 @@ export interface TranslationResult {
   cachedAt: number;
 }
 
+export type ApiProvider = "openrouter" | "gemini";
+
 export interface UserSettings {
   targetLanguage: TargetLanguage;
   difficulty: Difficulty;
   enabled: boolean;
-  apiKey: string;
+  apiProvider: ApiProvider;
+  openrouterApiKey: string;
+  geminiApiKey: string;
   displayMode: DisplayMode;
   maxTranslationsPerPage: number;
 }
@@ -68,9 +72,11 @@ export const DEFAULT_SETTINGS: UserSettings = {
   targetLanguage: "Bengali",
   difficulty: "intermediate",
   enabled: true,
-  apiKey: "",
+  apiProvider: "openrouter",
+  openrouterApiKey: "",
+  geminiApiKey: "",
   displayMode: "tooltip",
-  maxTranslationsPerPage: 50,
+  maxTranslationsPerPage: 1000,
 };
 
 export const LANGUAGE_OPTIONS: { value: TargetLanguage; label: string }[] = [

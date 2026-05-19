@@ -123,16 +123,25 @@ async function handleMessage(type: string, payload: unknown): Promise<unknown> {
 
     case MESSAGE_TYPES.TEST_CONNECTION: {
       const settings = await getSettings();
-      if (!settings.apiKey) {
-        return { success: false, message: "No API key set. Go to Setup tab and enter your OpenRouter API key." };
+
+      if (settings.apiProvider === "gemini") {
+        if (!settings.geminiApiKey) {
+          return { success: false, message: "No Gemini API key. Get one at aistudio.google.com/apikey" };
+        }
+      } else {
+        if (!settings.openrouterApiKey) {
+          return { success: false, message: "No OpenRouter API key. Go to Setup tab and enter your key." };
+        }
       }
+
       try {
         const result = await translateWord({
           word: "hello",
           context: "Hello, how are you?",
           targetLanguage: settings.targetLanguage,
         });
-        return { success: true, message: `Connected! Test: hello → ${result.translation || result.definition || "OK"}` };
+        const provider = settings.apiProvider === "gemini" ? "Gemini" : "OpenRouter";
+        return { success: true, message: `${provider} OK — hello → ${result.translation || result.definition || "OK"}` };
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         recordError(msg);
@@ -157,9 +166,10 @@ async function handleMessage(type: string, payload: unknown): Promise<unknown> {
 
 chrome.runtime.onInstalled.addListener(async () => {
   const settings = await getSettings();
-  if (!settings.apiKey) {
+  const hasKey = settings.apiProvider === "gemini" ? settings.geminiApiKey : settings.openrouterApiKey;
+  if (!hasKey) {
     console.log(
-      "%cLinguaFlow %cinstalled! %cSet your OpenRouter API key in extension options.",
+      "%cLinguaFlow %cinstalled! %cSet your API key in the Setup tab.",
       "color: #6366f1; font-weight: bold",
       "color: #22c55e",
       "color: inherit"

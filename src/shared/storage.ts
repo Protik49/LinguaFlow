@@ -7,10 +7,17 @@ const CACHE_KEY = "linguaflow_translation_cache";
 
 export async function getSettings(): Promise<UserSettings> {
   const result = await chrome.storage.local.get(SETTINGS_KEY);
-  if (result[SETTINGS_KEY]) {
-    return { ...DEFAULT_SETTINGS, ...result[SETTINGS_KEY] };
+  const stored = result[SETTINGS_KEY];
+  if (!stored) return DEFAULT_SETTINGS;
+
+  // Migrate old "apiKey" field to "openrouterApiKey"
+  if (stored.apiKey && !stored.openrouterApiKey) {
+    stored.openrouterApiKey = stored.apiKey;
+    delete stored.apiKey;
+    await chrome.storage.local.set({ [SETTINGS_KEY]: stored });
   }
-  return DEFAULT_SETTINGS;
+
+  return { ...DEFAULT_SETTINGS, ...stored };
 }
 
 export async function saveSettings(settings: Partial<UserSettings>): Promise<void> {

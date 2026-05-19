@@ -47,7 +47,9 @@ async function initSettings(): Promise<UserSettings> {
     targetLanguage: "Bengali",
     difficulty: "intermediate",
     enabled: true,
-    apiKey: "",
+    apiProvider: "openrouter",
+    openrouterApiKey: "",
+    geminiApiKey: "",
     displayMode: "tooltip",
     maxTranslationsPerPage: 1000,
   };
