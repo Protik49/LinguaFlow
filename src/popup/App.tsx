@@ -31,6 +31,7 @@ export default function App() {
       if (tabs[0]?.id) checkPageStatus(tabs[0].id);
     });
     chrome.runtime.sendMessage({ type: MESSAGE_TYPES.GET_SETTINGS }, (res) => {
+      if (chrome.runtime.lastError) return;
       if (res?.success) {
         setSettings(res.data);
         setOpenrouterKey(res.data.openrouterApiKey || "");
@@ -41,6 +42,7 @@ export default function App() {
       setVocab(result.linguaflow_vocabulary || []);
     });
     chrome.runtime.sendMessage({ type: MESSAGE_TYPES.GET_ERRORS }, (res) => {
+      if (chrome.runtime.lastError) return;
       if (res?.success) setErrors(res.data || []);
     });
   }, []);
@@ -115,18 +117,23 @@ export default function App() {
 
   const toggleEnabled = () => {
     chrome.runtime.sendMessage({ type: MESSAGE_TYPES.TOGGLE_ENABLED }, (res) => {
+      if (chrome.runtime.lastError) return;
       if (res?.success && settings) setSettings({ ...settings, enabled: res.data.enabled });
     });
   };
 
   const clearCache = () => {
-    chrome.runtime.sendMessage({ type: MESSAGE_TYPES.CACHE_CLEAR }, () => showStatus("Cache cleared!"));
+    chrome.runtime.sendMessage({ type: MESSAGE_TYPES.CACHE_CLEAR }, () => {
+      if (chrome.runtime.lastError) return;
+      showStatus("Cache cleared!");
+    });
   };
 
   const testConnection = () => {
     setTestStatus("testing");
     setTestMsg("Testing...");
     chrome.runtime.sendMessage({ type: MESSAGE_TYPES.TEST_CONNECTION }, (res) => {
+      if (chrome.runtime.lastError) { setTestStatus("fail"); setTestMsg("Background unavailable"); return; }
       if (res?.success) {
         if (res.data.success) { setTestStatus("ok"); setTestMsg(res.data.message); }
         else { setTestStatus("fail"); setTestMsg(res.data.message); }
@@ -149,7 +156,10 @@ export default function App() {
   };
 
   const clearErrors = () => {
-    chrome.runtime.sendMessage({ type: MESSAGE_TYPES.CLEAR_ERRORS }, () => { setErrors([]); showStatus("Errors cleared!"); });
+    chrome.runtime.sendMessage({ type: MESSAGE_TYPES.CLEAR_ERRORS }, () => {
+      if (chrome.runtime.lastError) return;
+      setErrors([]); showStatus("Errors cleared!");
+    });
   };
 
   const removeVocabEntry = (id: string) => {

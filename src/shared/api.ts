@@ -117,12 +117,12 @@ async function callOpenRouter(apiKey: string, request: TranslationRequest): Prom
 /* ── Gemini API ── */
 
 async function callGemini(apiKey: string, request: TranslationRequest): Promise<TranslationResult> {
-  const userPrompt = `Translate the word "${request.word}" to ${request.targetLanguage}.
-
+  const userPrompt = `Word: ${request.word}
 Context: ${request.context || "None"}
+Language: ${request.targetLanguage}
 
-Return ONLY this exact JSON format, nothing else:
-{"translation":"...","definition":"...","pronunciation":"...","synonym":"..."}`;
+Output ONLY a JSON object like this, nothing else:
+{"translation":"the translation","definition":"brief meaning","pronunciation":"how to say it","synonym":"similar word"}`;
 
   const response = await fetch(`${GEMINI_URL}?key=${apiKey}`, {
     method: "POST",
@@ -134,17 +134,6 @@ Return ONLY this exact JSON format, nothing else:
       generationConfig: {
         temperature: 0.1,
         maxOutputTokens: 200,
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: "object",
-          properties: {
-            translation: { type: "string" },
-            definition: { type: "string" },
-            pronunciation: { type: "string" },
-            synonym: { type: "string" },
-          },
-          required: ["translation", "definition", "pronunciation", "synonym"],
-        },
       },
     }),
   });
@@ -167,7 +156,7 @@ Return ONLY this exact JSON format, nothing else:
   }
 
   const content = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
-  
+
   if (!content) {
     throw new Error("Gemini API returned empty response");
   }
