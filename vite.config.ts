@@ -24,7 +24,7 @@ function copyManifestPlugin() {
         description:
           "AI-powered vocabulary learning — translate words inline while reading",
         permissions: ["storage"],
-        host_permissions: ["https://openrouter.ai/*"],
+        host_permissions: ["https://openrouter.ai/*", "https://generativelanguage.googleapis.com/*"],
         background: {
           service_worker: "background.js",
         },

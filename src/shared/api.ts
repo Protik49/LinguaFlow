@@ -117,14 +117,33 @@ async function callOpenRouter(apiKey: string, request: TranslationRequest): Prom
 /* ── Gemini API ── */
 
 async function callGemini(apiKey: string, request: TranslationRequest): Promise<TranslationResult> {
-  const prompt = `${buildSystemPrompt(request.targetLanguage)}\n\n${buildUserPrompt(request.word, request.context, request.targetLanguage)}`;
+  const systemInstruction = `You are a precise vocabulary translation assistant. Translate individual words/phrases and provide concise lexical information.
+
+Respond with ONLY a valid JSON object. Do NOT wrap it in markdown code fences. Output ONLY the raw JSON:
+{"translation":"translation in ${request.targetLanguage}","definition":"brief definition in ${request.targetLanguage} (max 10 words)","pronunciation":"pronunciation guide for the ORIGINAL word","synonym":"one synonym or similar word in ${request.targetLanguage}, or empty string if none"}
+
+Rules:
+- Context matters: choose the translation that fits the given context
+- Keep all values concise (under 15 words each)
+- Output ONLY the JSON object, nothing else — no markdown, no explanation
+- If the word is very common and has no meaningful translation value, set translation to empty string`;
+
+  const userPrompt = `Word: "${request.word}"
+Context: "${request.context || "No context provided"}"
+Translate to: ${request.targetLanguage}
+
+Respond with ONLY the JSON object, nothing else.`;
 
   const response = await fetch(`${GEMINI_URL}?key=${apiKey}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
+      systemInstruction: {
+        parts: [{ text: systemInstruction }],
+      },
       contents: [{
-        parts: [{ text: prompt }],
+        role: "user",
+        parts: [{ text: userPrompt }],
       }],
       generationConfig: {
         temperature: 0.3,

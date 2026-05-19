@@ -94,6 +94,8 @@ function createWordSpan(word: string, originalText: string, start: number, end: 
     cursor: pointer;
     border-bottom: 1px dotted #818cf8;
     transition: background 0.15s;
+    font-size: inherit;
+    line-height: inherit;
   `;
 
   const state: WordState = {
