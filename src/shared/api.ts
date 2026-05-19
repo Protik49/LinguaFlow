@@ -4,7 +4,7 @@ import { getSettings } from "./storage";
 /* ── API Endpoints ── */
 
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
-const GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemma-2-9b-it:generateContent";
+const GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemma-4-31b-it:generateContent";
 
 /* ── Prompts ── */
 
