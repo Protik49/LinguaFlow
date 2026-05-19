@@ -12,15 +12,10 @@ interface PendingRequest {
 
 const pendingQueue: PendingRequest[] = [];
 let processing = false;
+let lastRequestTime = 0;
+const MIN_INTERVAL_MS = 1200; // 1.2s between requests for free tier
+let consecutive429 = 0;
 const recentErrors: { message: string; time: string }[] = [];
-
-function debounce(fn: () => void, ms: number) {
-  let timeout: ReturnType<typeof setTimeout>;
-  return () => {
-    clearTimeout(timeout);
-    timeout = setTimeout(fn, ms);
-  };
-}
 
 function recordError(msg: string) {
   recentErrors.unshift({ message: msg, time: new Date().toLocaleTimeString() });
@@ -28,49 +23,74 @@ function recordError(msg: string) {
   chrome.storage.local.set({ linguaflow_last_errors: recentErrors });
 }
 
-const processQueue = debounce(async () => {
+async function delay(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function processQueue() {
   if (processing) return;
   processing = true;
 
   while (pendingQueue.length > 0) {
-    const batch = pendingQueue.splice(0, 3);
+    const req = pendingQueue.shift()!;
     const settings = await getSettings();
 
     if (!settings.enabled) {
-      batch.forEach((req) => req.reject(new Error("Extension disabled")));
+      req.reject(new Error("Extension disabled"));
       continue;
     }
 
-    await Promise.all(
-      batch.map(async (req) => {
-        try {
-          const cacheKey = `${req.word}:${req.targetLanguage}`;
-          const cached = await getCachedTranslation(cacheKey);
+    // Rate limiting: wait minimum interval between requests
+    const now = Date.now();
+    const elapsed = now - lastRequestTime;
+    if (elapsed < MIN_INTERVAL_MS) {
+      await delay(MIN_INTERVAL_MS - elapsed);
+    }
 
-          if (cached) {
-            req.resolve(cached);
-            return;
-          }
+    // Exponential backoff on consecutive 429s
+    if (consecutive429 > 0) {
+      const backoffMs = Math.min(1000 * Math.pow(2, consecutive429), 30000);
+      await delay(backoffMs);
+    }
 
-          const result = await translateWord({
-            word: req.word,
-            context: "",
-            targetLanguage: req.targetLanguage as TranslationRequest["targetLanguage"],
-          });
+    try {
+      const cacheKey = `${req.word}:${req.targetLanguage}`;
+      const cached = await getCachedTranslation(cacheKey);
 
-          await cacheTranslation(cacheKey, result);
-          req.resolve(result);
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
-          recordError(msg);
-          req.reject(new Error(msg));
-        }
-      })
-    );
+      if (cached) {
+        consecutive429 = 0;
+        lastRequestTime = Date.now();
+        req.resolve(cached);
+        continue;
+      }
+
+      const result = await translateWord({
+        word: req.word,
+        context: "",
+        targetLanguage: req.targetLanguage as TranslationRequest["targetLanguage"],
+      });
+
+      consecutive429 = 0;
+      lastRequestTime = Date.now();
+      await cacheTranslation(cacheKey, result);
+      req.resolve(result);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      recordError(msg);
+
+      if (msg.includes("429") || msg.includes("rate limit") || msg.includes("Retry in")) {
+        consecutive429++;
+      } else {
+        consecutive429 = 0;
+      }
+
+      lastRequestTime = Date.now();
+      req.reject(new Error(msg));
+    }
   }
 
   processing = false;
-}, 200);
+}
 
 function enqueueTranslation(word: string, targetLanguage: string): Promise<TranslationResult> {
   return new Promise((resolve, reject) => {

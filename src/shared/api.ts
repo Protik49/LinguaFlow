@@ -79,7 +79,7 @@ async function callOpenRouter(apiKey: string, request: TranslationRequest): Prom
       "X-Title": "LinguaFlow",
     },
     body: JSON.stringify({
-      model: "google/gemma-2-9b-it:free",
+      model: "google/gemma-4-31b-it:free",
       messages: [
         { role: "system", content: buildSystemPrompt(request.targetLanguage) },
         { role: "user", content: buildUserPrompt(request.word, request.context, request.targetLanguage) },
@@ -97,8 +97,8 @@ async function callOpenRouter(apiKey: string, request: TranslationRequest): Prom
     if (response.status === 429) {
       const retryAfter = parseInt(response.headers.get("Retry-After") || "0", 10);
       const waitMsg = retryAfter > 0
-        ? `Retry in ${retryAfter}s`
-        : "Free tier daily limit reached. Add credits or switch to Gemini API in Setup.";
+        ? `Rate limited. Retry in ${retryAfter}s`
+        : "Rate limited. Free tier limit reached. Wait or switch to Gemini API.";
       throw new Error(waitMsg);
     }
     if (response.status === 402) {
