@@ -63,6 +63,7 @@ export default function App() {
       if (!tabs[0]?.id) { setIsToggling(false); return; }
       chrome.tabs.sendMessage(tabs[0].id, { type: MESSAGE_TYPES.ACTIVATE_PAGE }, (res) => {
         setIsToggling(false);
+        if (chrome.runtime.lastError) { showStatus("Page not supported"); return; }
         if (res?.success && res.data?.activated) {
           setIsActiveOnPage(true);
           showStatus("Activated!");
@@ -79,6 +80,7 @@ export default function App() {
       if (!tabs[0]?.id) { setIsToggling(false); return; }
       chrome.tabs.sendMessage(tabs[0].id, { type: MESSAGE_TYPES.DEACTIVATE_PAGE }, (res) => {
         setIsToggling(false);
+        if (chrome.runtime.lastError) { showStatus("Page not supported"); return; }
         if (res?.success) { setIsActiveOnPage(false); showStatus("Deactivated"); }
       });
     });
@@ -138,7 +140,10 @@ export default function App() {
   const forceRescan = () => {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       if (tabs[0]?.id) {
-        chrome.tabs.sendMessage(tabs[0].id, { type: MESSAGE_TYPES.RESCAN_PAGE }, () => showStatus("Rescanning..."));
+        chrome.tabs.sendMessage(tabs[0].id, { type: MESSAGE_TYPES.RESCAN_PAGE }, () => {
+          if (chrome.runtime.lastError) { showStatus("Page not supported"); return; }
+          showStatus("Rescanning...");
+        });
       }
     });
   };

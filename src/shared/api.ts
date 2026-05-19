@@ -145,9 +145,23 @@ async function callGemini(apiKey: string, request: TranslationRequest): Promise<
   }
 
   const data = await response.json();
+  
+  // Log raw response for debugging
+  console.log("[Gemini] Raw response:", JSON.stringify(data).substring(0, 500));
+
+  // Check for error in response
+  if (data.error) {
+    throw new Error(`Gemini API: ${data.error.message || JSON.stringify(data.error)}`);
+  }
+
   const content = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+  
+  if (!content) {
+    throw new Error("Gemini API returned empty response");
+  }
+
   const result = parseResponse(content);
-  if (!result) throw new Error("Failed to parse Gemini response");
+  if (!result) throw new Error(`Failed to parse Gemini response. Raw: ${content.substring(0, 200)}`);
   return result;
 }
 
