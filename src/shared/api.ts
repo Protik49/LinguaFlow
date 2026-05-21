@@ -51,15 +51,20 @@ function parseResponse(content: string): TranslationResult | null {
       };
     }
   } catch {
+    type TranslationField = "translation" | "definition" | "pronunciation" | "synonym";
     const lines = content.split("\n").filter(Boolean);
     const result: TranslationResult = {
-      translation: "", definition: "", pronunciation: "", synonym: "", cachedAt: Date.now(),
+      translation: "",
+      definition: "",
+      pronunciation: "",
+      synonym: "",
+      cachedAt: Date.now(),
     };
     for (const line of lines) {
       const match = line.match(/^(translation|definition|pronunciation|synonym)[:\s]+(.+)/i);
       if (match) {
-        const key = match[1].toLowerCase() as keyof TranslationResult;
-        if (key in result) (result as Record<string, string>)[key] = match[2].trim();
+        const key = match[1].toLowerCase() as TranslationField;
+        result[key] = match[2].trim();
       }
     }
     return result.translation ? result : null;
@@ -91,8 +96,9 @@ async function callOpenRouter(apiKey: string, request: TranslationRequest): Prom
 
   if (!response.ok) {
     const errorText = await response.text();
-    let parsed: any;
-    try { parsed = JSON.parse(errorText); } catch { /* ignore */ }
+    type ApiError = { error?: { message?: string } };
+    let parsed: ApiError | undefined;
+    try { parsed = JSON.parse(errorText) as ApiError; } catch { /* ignore */ }
 
     if (response.status === 429) {
       const retryAfter = parseInt(response.headers.get("Retry-After") || "0", 10);
@@ -140,8 +146,9 @@ Output ONLY a JSON object like this, nothing else:
 
   if (!response.ok) {
     const errorText = await response.text();
-    let parsed: any;
-    try { parsed = JSON.parse(errorText); } catch { /* ignore */ }
+    type ApiError = { error?: { message?: string } };
+    let parsed: ApiError | undefined;
+    try { parsed = JSON.parse(errorText) as ApiError; } catch { /* ignore */ }
 
     if (response.status === 429) {
       throw new Error("Gemini API: rate limited. Wait and retry, or switch to OpenRouter in Setup.");

@@ -100,6 +100,10 @@ export function generateVocabularyId(): string {
   return `vocab_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 }
 
+function escapeCsv(value: string): string {
+  return `"${String(value).replace(/"/g, '""')}"`;
+}
+
 export async function exportVocabulary(format: "json" | "csv" = "json"): Promise<string> {
   const vocab = await getVocabulary();
 
@@ -107,14 +111,14 @@ export async function exportVocabulary(format: "json" | "csv" = "json"): Promise
     const headers = ["Word", "Translation", "Definition", "Pronunciation", "Synonym", "Context", "Language", "Saved At"];
     const rows = vocab.map((v) =>
       [
-        `"${v.word}"`,
-        `"${v.translation}"`,
-        `"${v.definition}"`,
-        `"${v.pronunciation}"`,
-        `"${v.synonym}"`,
-        `"${v.context}"`,
-        `"${v.targetLanguage}"`,
-        `"${new Date(v.savedAt).toISOString()}"`,
+        escapeCsv(v.word),
+        escapeCsv(v.translation),
+        escapeCsv(v.definition),
+        escapeCsv(v.pronunciation),
+        escapeCsv(v.synonym),
+        escapeCsv(v.context),
+        escapeCsv(v.targetLanguage),
+        escapeCsv(new Date(v.savedAt).toISOString()),
       ].join(",")
     );
     return [headers.join(","), ...rows].join("\n");

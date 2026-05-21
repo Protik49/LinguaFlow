@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import type { UserSettings, VocabularyEntry, TargetLanguage } from "@shared/types";
 import { LANGUAGE_OPTIONS } from "@shared/types";
+import { getVocabulary, saveVocabulary } from "@shared/storage";
 import { MESSAGE_TYPES } from "@shared/constants";
 
 type Tab = "general" | "vocabulary";
@@ -8,7 +9,8 @@ type Tab = "general" | "vocabulary";
 export default function App() {
   const [tab, setTab] = useState<Tab>("general");
   const [settings, setSettings] = useState<UserSettings | null>(null);
-  const [apiKey, setApiKey] = useState("");
+  const [openrouterKey, setOpenrouterKey] = useState("");
+  const [geminiKey, setGeminiKey] = useState("");
   const [showKey, setShowKey] = useState(false);
   const [statusMsg, setStatusMsg] = useState("");
   const [vocab, setVocab] = useState<VocabularyEntry[]>([]);
@@ -18,16 +20,15 @@ export default function App() {
     chrome.runtime.sendMessage({ type: MESSAGE_TYPES.GET_SETTINGS }, (res) => {
       if (res?.success) {
         setSettings(res.data);
-        setApiKey(res.data.apiKey || "");
+        setOpenrouterKey(res.data.openrouterApiKey || "");
+        setGeminiKey(res.data.geminiApiKey || "");
       }
     });
     loadVocab();
   }, []);
 
   const loadVocab = () => {
-    chrome.storage.local.get("linguaflow_vocabulary", (result) => {
-      setVocab(result.linguaflow_vocabulary || []);
-    });
+    getVocabulary().then(setVocab).catch(() => {});
   };
 
   const showStatus = useCallback((msg: string) => {
@@ -35,13 +36,14 @@ export default function App() {
     setTimeout(() => setStatusMsg(""), 2500);
   }, []);
 
-  const saveApiKey = () => {
-    chrome.storage.local.get("linguaflow_settings", (result) => {
-      const current = result.linguaflow_settings || {};
-      const updated = { ...current, apiKey };
-      chrome.storage.local.set({ linguaflow_settings: updated });
-      showStatus("API key saved!");
-    });
+  const saveOpenrouterKey = () => {
+    if (!settings) return;
+    updateSetting("openrouterApiKey", openrouterKey);
+  };
+
+  const saveGeminiKey = () => {
+    if (!settings) return;
+    updateSetting("geminiApiKey", geminiKey);
   };
 
   const updateSetting = async <K extends keyof UserSettings>(key: K, value: UserSettings[K]) => {
@@ -66,12 +68,11 @@ export default function App() {
     showStatus(`Exported as ${format.toUpperCase()}!`);
   };
 
-  const clearVocab = () => {
-    if (confirm("Delete all saved vocabulary? This cannot be undone.")) {
-      chrome.storage.local.set({ linguaflow_vocabulary: [] });
-      setVocab([]);
-      showStatus("Vocabulary cleared!");
-    }
+  const clearVocab = async () => {
+    if (!confirm("Delete all saved vocabulary? This cannot be undone.")) return;
+    await saveVocabulary([]);
+    setVocab([]);
+    showStatus("Vocabulary cleared!");
   };
 
   const clearCache = () => {
@@ -137,39 +138,99 @@ export default function App() {
       <main className="max-w-4xl mx-auto px-6 py-8">
         {tab === "general" && (
           <div className="space-y-8">
-            {/* API Key */}
+            {/* API Provider & API Key */}
             <section className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-6">
-              <h2 className="text-base font-semibold text-gray-900 dark:text-white mb-1">OpenRouter API Key</h2>
-              <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
-                Get your free API key at{" "}
-                <a href="https://openrouter.ai/keys" target="_blank" className="text-brand-500 hover:underline" rel="noreferrer">
-                  openrouter.ai/keys
-                </a>
-                . The Gemma model is used for translations.
-              </p>
-              <div className="flex gap-2">
-                <div className="relative flex-1">
-                  <input
-                    type={showKey ? "text" : "password"}
-                    value={apiKey}
-                    onChange={(e) => setApiKey(e.target.value)}
-                    placeholder="sk-or-v1-..."
-                    className="w-full px-3 py-2 pr-10 text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-500 focus:border-transparent outline-none font-mono"
-                  />
+              <h2 className="text-base font-semibold text-gray-900 dark:text-white mb-2">API Provider</h2>
+              <div className="flex gap-2 mb-4">
+                {([
+                  { value: "openrouter" as const, label: "OpenRouter" },
+                  { value: "gemini" as const, label: "Gemini" },
+                ]).map((prov) => (
                   <button
-                    onClick={() => setShowKey(!showKey)}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-xs"
+                    key={prov.value}
+                    onClick={() => updateSetting("apiProvider", prov.value)}
+                    className={`flex-1 py-2 text-sm rounded-lg border transition-colors ${
+                      settings?.apiProvider === prov.value
+                        ? "border-brand-500 bg-brand-50 dark:bg-brand-950 text-brand-700 dark:text-brand-400 font-medium"
+                        : "border-gray-200 dark:border-gray-700 text-gray-500 hover:border-gray-300"
+                    }`}
                   >
-                    {showKey ? "Hide" : "Show"}
+                    {prov.label}
                   </button>
-                </div>
-                <button
-                  onClick={saveApiKey}
-                  className="px-5 py-2 text-sm font-medium bg-brand-500 hover:bg-brand-600 text-white rounded-lg transition-colors"
-                >
-                  Save Key
-                </button>
+                ))}
               </div>
+
+              {settings?.apiProvider === "openrouter" && (
+                <>
+                  <h3 className="text-sm font-medium text-gray-900 dark:text-white mb-1">OpenRouter API Key</h3>
+                  <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+                    Get your free API key at{" "}
+                    <a href="https://openrouter.ai/keys" target="_blank" className="text-brand-500 hover:underline" rel="noreferrer">
+                      openrouter.ai/keys
+                    </a>
+                    . Uses the Gemma translation model.
+                  </p>
+                  <div className="flex gap-2">
+                    <div className="relative flex-1">
+                      <input
+                        type={showKey ? "text" : "password"}
+                        value={openrouterKey}
+                        onChange={(e) => setOpenrouterKey(e.target.value)}
+                        placeholder="sk-or-v1-..."
+                        className="w-full px-3 py-2 pr-10 text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-500 focus:border-transparent outline-none font-mono"
+                      />
+                      <button
+                        onClick={() => setShowKey(!showKey)}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-xs"
+                      >
+                        {showKey ? "Hide" : "Show"}
+                      </button>
+                    </div>
+                    <button
+                      onClick={saveOpenrouterKey}
+                      className="px-5 py-2 text-sm font-medium bg-brand-500 hover:bg-brand-600 text-white rounded-lg transition-colors"
+                    >
+                      Save Key
+                    </button>
+                  </div>
+                </>
+              )}
+
+              {settings?.apiProvider === "gemini" && (
+                <>
+                  <h3 className="text-sm font-medium text-gray-900 dark:text-white mb-1">Gemini API Key</h3>
+                  <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+                    Get your key from{" "}
+                    <a href="https://aistudio.google.com/apikey" target="_blank" className="text-brand-500 hover:underline" rel="noreferrer">
+                      aistudio.google.com/apikey
+                    </a>
+                    .
+                  </p>
+                  <div className="flex gap-2">
+                    <div className="relative flex-1">
+                      <input
+                        type={showKey ? "text" : "password"}
+                        value={geminiKey}
+                        onChange={(e) => setGeminiKey(e.target.value)}
+                        placeholder="AIza..."
+                        className="w-full px-3 py-2 pr-10 text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-500 focus:border-transparent outline-none font-mono"
+                      />
+                      <button
+                        onClick={() => setShowKey(!showKey)}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-xs"
+                      >
+                        {showKey ? "Hide" : "Show"}
+                      </button>
+                    </div>
+                    <button
+                      onClick={saveGeminiKey}
+                      className="px-5 py-2 text-sm font-medium bg-brand-500 hover:bg-brand-600 text-white rounded-lg transition-colors"
+                    >
+                      Save Key
+                    </button>
+                  </div>
+                </>
+              )}
             </section>
 
             {/* Language */}

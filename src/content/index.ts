@@ -127,11 +127,13 @@ async function handleWordClick(span: HTMLElement, state: WordState) {
     return;
   }
 
+  const context = span.parentElement?.textContent?.substring(0, 200) || "";
+
   state.loading = true;
   showTooltip(span, state.word, null, true, null, () => {}, false);
 
   try {
-    const result = await translateWord(state.word);
+    const result = await translateWord(state.word, context);
     state.result = result;
     state.loading = false;
     state.error = null;
@@ -165,11 +167,11 @@ function insertInlineTranslation(span: HTMLElement, translation: string) {
 
 /* ── Translation ── */
 
-function translateWord(word: string): Promise<TranslationResult> {
+function translateWord(word: string, context: string): Promise<TranslationResult> {
   return new Promise((resolve, reject) => {
     try {
       chrome.runtime.sendMessage(
-        { type: MESSAGE_TYPES.TRANSLATE_WORD, payload: { word } },
+        { type: MESSAGE_TYPES.TRANSLATE_WORD, payload: { word, context } },
         (response) => {
           if (chrome.runtime.lastError) {
             reject(new Error(chrome.runtime.lastError.message));

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import type { UserSettings, VocabularyEntry, ApiProvider } from "@shared/types";
 import { LANGUAGE_OPTIONS } from "@shared/types";
+import { getVocabulary, saveVocabulary } from "@shared/storage";
 import { MESSAGE_TYPES } from "@shared/constants";
 
 type Tab = "learn" | "setup" | "vocab";
@@ -38,9 +39,7 @@ export default function App() {
         setGeminiKey(res.data.geminiApiKey || "");
       }
     });
-    chrome.storage.local.get("linguaflow_vocabulary", (result) => {
-      setVocab(result.linguaflow_vocabulary || []);
-    });
+    getVocabulary().then(setVocab).catch(() => {});
     chrome.runtime.sendMessage({ type: MESSAGE_TYPES.GET_ERRORS }, (res) => {
       if (chrome.runtime.lastError) return;
       if (res?.success) setErrors(res.data || []);
@@ -100,19 +99,11 @@ export default function App() {
   );
 
   const saveOpenrouterKey = () => {
-    chrome.storage.local.get("linguaflow_settings", (result) => {
-      const current = result.linguaflow_settings || {};
-      chrome.storage.local.set({ linguaflow_settings: { ...current, openrouterApiKey: openrouterKey } });
-      showStatus("Saved!");
-    });
+    updateSetting("openrouterApiKey", openrouterKey);
   };
 
   const saveGeminiKey = () => {
-    chrome.storage.local.get("linguaflow_settings", (result) => {
-      const current = result.linguaflow_settings || {};
-      chrome.storage.local.set({ linguaflow_settings: { ...current, geminiApiKey: geminiKey } });
-      showStatus("Saved!");
-    });
+    updateSetting("geminiApiKey", geminiKey);
   };
 
   const toggleEnabled = () => {
@@ -162,14 +153,14 @@ export default function App() {
     });
   };
 
-  const removeVocabEntry = (id: string) => {
+  const removeVocabEntry = async (id: string) => {
     const updated = vocab.filter((v) => v.id !== id);
+    await saveVocabulary(updated);
     setVocab(updated);
-    chrome.storage.local.set({ linguaflow_vocabulary: updated });
   };
 
-  const clearVocab = () => {
-    chrome.storage.local.set({ linguaflow_vocabulary: [] });
+  const clearVocab = async () => {
+    await saveVocabulary([]);
     setVocab([]);
     showStatus("Vocabulary cleared!");
   };

@@ -6,6 +6,7 @@ import { MESSAGE_TYPES } from "../shared/constants";
 interface PendingRequest {
   word: string;
   targetLanguage: string;
+  context: string;
   resolve: (result: TranslationResult) => void;
   reject: (error: Error) => void;
 }
@@ -66,7 +67,7 @@ async function processQueue() {
 
       const result = await translateWord({
         word: req.word,
-        context: "",
+        context: req.context,
         targetLanguage: req.targetLanguage as TranslationRequest["targetLanguage"],
       });
 
@@ -92,9 +93,9 @@ async function processQueue() {
   processing = false;
 }
 
-function enqueueTranslation(word: string, targetLanguage: string): Promise<TranslationResult> {
+function enqueueTranslation(word: string, targetLanguage: string, context = ""): Promise<TranslationResult> {
   return new Promise((resolve, reject) => {
-    pendingQueue.push({ word, targetLanguage, resolve, reject });
+    pendingQueue.push({ word, targetLanguage, context, resolve, reject });
     processQueue();
   });
 }
@@ -110,9 +111,10 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 async function handleMessage(type: string, payload: unknown): Promise<unknown> {
   switch (type) {
     case MESSAGE_TYPES.TRANSLATE_WORD: {
-      const { word } = payload as { word: string };
+      const { word, context, targetLanguage } = payload as { word: string; context?: string; targetLanguage?: string };
       const settings = await getSettings();
-      return enqueueTranslation(word, settings.targetLanguage);
+      const language = targetLanguage || settings.targetLanguage;
+      return enqueueTranslation(word, language, context || "");
     }
 
     case MESSAGE_TYPES.GET_SETTINGS: {
@@ -208,7 +210,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
           chrome.tabs.sendMessage(tab.id, {
             type: MESSAGE_TYPES.SETTINGS_UPDATED,
             payload: newSettings,
-          }).catch(() => {});
+          });
         }
       });
     });
