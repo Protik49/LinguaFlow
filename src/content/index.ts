@@ -471,7 +471,8 @@ async function init() {
     return;
   }
 
-  console.log("[LinguaFlow] Loaded. Click the extension icon to activate on this page.");
+  console.log(`[LinguaFlow] Auto-activating — ${settings.targetLanguage} / ${settings.difficulty}`);
+  activate();
 }
 
 if (document.readyState === "loading") {

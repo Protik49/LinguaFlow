@@ -1,4 +1,5 @@
 export type TargetLanguage =
+  | "English"
   | "Bengali"
   | "Hindi"
   | "Arabic"
@@ -80,6 +81,7 @@ export const DEFAULT_SETTINGS: UserSettings = {
 };
 
 export const LANGUAGE_OPTIONS: { value: TargetLanguage; label: string }[] = [
+  { value: "English", label: "English" },
   { value: "Bengali", label: "বাংলা (Bengali)" },
   { value: "Hindi", label: "हिन्दी (Hindi)" },
   { value: "Arabic", label: "العربية (Arabic)" },

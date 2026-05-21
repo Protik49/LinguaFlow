@@ -92,7 +92,7 @@ export default function App() {
   if (!settings) {
     return (
       <div className="flex items-center justify-center min-h-screen">
-        <div className="w-8 h-8 border-2 border-brand-200 border-t-brand-500 rounded-full animate-spin" />
+        <div className="w-8 h-8 border-2 border-gray-200 dark:border-gray-700 border-t-slate-700 rounded-full animate-spin" />
       </div>
     );
   }
@@ -102,7 +102,7 @@ export default function App() {
       <header className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800">
         <div className="max-w-4xl mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-lg bg-brand-500 flex items-center justify-center">
+            <div className="w-9 h-9 rounded-lg bg-slate-700 flex items-center justify-center">
               <span className="text-white font-bold">L</span>
             </div>
             <div>
@@ -124,7 +124,7 @@ export default function App() {
                 onClick={() => setTab(t)}
                 className={`px-4 py-2.5 text-sm font-medium rounded-t-lg transition-colors ${
                   tab === t
-                    ? "bg-gray-50 dark:bg-gray-950 text-brand-600 dark:text-brand-400 border-b-2 border-brand-500"
+                    ? "bg-gray-50 dark:bg-gray-950 text-slate-700 dark:text-slate-300 border-b-2 border-slate-700"
                     : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300"
                 }`}
               >
@@ -151,7 +151,7 @@ export default function App() {
                     onClick={() => updateSetting("apiProvider", prov.value)}
                     className={`flex-1 py-2 text-sm rounded-lg border transition-colors ${
                       settings?.apiProvider === prov.value
-                        ? "border-brand-500 bg-brand-50 dark:bg-brand-950 text-brand-700 dark:text-brand-400 font-medium"
+                        ? "border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-700 dark:text-slate-300 font-medium"
                         : "border-gray-200 dark:border-gray-700 text-gray-500 hover:border-gray-300"
                     }`}
                   >
@@ -165,7 +165,7 @@ export default function App() {
                   <h3 className="text-sm font-medium text-gray-900 dark:text-white mb-1">OpenRouter API Key</h3>
                   <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
                     Get your free API key at{" "}
-                    <a href="https://openrouter.ai/keys" target="_blank" className="text-brand-500 hover:underline" rel="noreferrer">
+                    <a href="https://openrouter.ai/keys" target="_blank" className="text-slate-700 hover:underline" rel="noreferrer">
                       openrouter.ai/keys
                     </a>
                     . Uses the Gemma translation model.
@@ -177,7 +177,7 @@ export default function App() {
                         value={openrouterKey}
                         onChange={(e) => setOpenrouterKey(e.target.value)}
                         placeholder="sk-or-v1-..."
-                        className="w-full px-3 py-2 pr-10 text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-500 focus:border-transparent outline-none font-mono"
+                        className="w-full px-3 py-2 pr-10 text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-slate-500 focus:border-transparent outline-none font-mono"
                       />
                       <button
                         onClick={() => setShowKey(!showKey)}
@@ -188,7 +188,7 @@ export default function App() {
                     </div>
                     <button
                       onClick={saveOpenrouterKey}
-                      className="px-5 py-2 text-sm font-medium bg-brand-500 hover:bg-brand-600 text-white rounded-lg transition-colors"
+                      className="px-5 py-2 text-sm font-medium bg-slate-700 hover:bg-slate-800 text-white rounded-lg transition-colors"
                     >
                       Save Key
                     </button>
@@ -201,7 +201,7 @@ export default function App() {
                   <h3 className="text-sm font-medium text-gray-900 dark:text-white mb-1">Gemini API Key</h3>
                   <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
                     Get your key from{" "}
-                    <a href="https://aistudio.google.com/apikey" target="_blank" className="text-brand-500 hover:underline" rel="noreferrer">
+                    <a href="https://aistudio.google.com/apikey" target="_blank" className="text-slate-700 hover:underline" rel="noreferrer">
                       aistudio.google.com/apikey
                     </a>
                     .
@@ -213,7 +213,7 @@ export default function App() {
                         value={geminiKey}
                         onChange={(e) => setGeminiKey(e.target.value)}
                         placeholder="AIza..."
-                        className="w-full px-3 py-2 pr-10 text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-500 focus:border-transparent outline-none font-mono"
+                        className="w-full px-3 py-2 pr-10 text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-slate-500 focus:border-transparent outline-none font-mono"
                       />
                       <button
                         onClick={() => setShowKey(!showKey)}
@@ -224,7 +224,7 @@ export default function App() {
                     </div>
                     <button
                       onClick={saveGeminiKey}
-                      className="px-5 py-2 text-sm font-medium bg-brand-500 hover:bg-brand-600 text-white rounded-lg transition-colors"
+                      className="px-5 py-2 text-sm font-medium bg-slate-700 hover:bg-slate-800 text-white rounded-lg transition-colors"
                     >
                       Save Key
                     </button>
@@ -243,7 +243,7 @@ export default function App() {
                     onClick={() => updateSetting("targetLanguage", opt.value)}
                     className={`px-3 py-2.5 text-sm rounded-lg border transition-colors text-left ${
                       settings.targetLanguage === opt.value
-                        ? "border-brand-500 bg-brand-50 dark:bg-brand-950 text-brand-700 dark:text-brand-400 font-medium"
+                        ? "border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-700 dark:text-slate-300 font-medium"
                         : "border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:border-gray-300"
                     }`}
                   >
@@ -266,7 +266,7 @@ export default function App() {
                     key={opt.value}
                     className={`flex items-start gap-3 px-4 py-3 rounded-lg cursor-pointer border transition-colors ${
                       settings.difficulty === opt.value
-                        ? "border-brand-500 bg-brand-50 dark:bg-brand-950"
+                        ? "border-slate-700 bg-slate-50 dark:bg-slate-950"
                         : "border-gray-200 dark:border-gray-700 hover:border-gray-300"
                     }`}
                   >
@@ -299,7 +299,7 @@ export default function App() {
                     onClick={() => updateSetting("displayMode", opt.value)}
                     className={`flex-1 p-4 rounded-xl border transition-colors text-left ${
                       settings.displayMode === opt.value
-                        ? "border-brand-500 bg-brand-50 dark:bg-brand-950"
+                        ? "border-slate-700 bg-slate-50 dark:bg-slate-950"
                         : "border-gray-200 dark:border-gray-700 hover:border-gray-300"
                     }`}
                   >
@@ -367,7 +367,7 @@ export default function App() {
                   value={vocabFilter}
                   onChange={(e) => setVocabFilter(e.target.value)}
                   placeholder="Filter words..."
-                  className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-500 focus:border-transparent outline-none mb-4"
+                  className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-slate-500 focus:border-transparent outline-none mb-4"
                 />
               )}
 
@@ -390,7 +390,7 @@ export default function App() {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1">
                           <span className="font-medium text-gray-900 dark:text-white">{entry.word}</span>
-                          <span className="text-brand-500 dark:text-brand-400 font-medium text-sm">→ {entry.translation}</span>
+                          <span className="text-slate-700 dark:text-slate-300 font-medium text-sm">→ {entry.translation}</span>
                         </div>
                         {entry.definition && (
                           <p className="text-xs text-gray-500 dark:text-gray-400 italic mb-1">{entry.definition}</p>
