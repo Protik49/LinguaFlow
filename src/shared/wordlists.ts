@@ -147,7 +147,9 @@ const INTERMEDIATE_SKIP = new Set([
 
 export function shouldTranslate(
   word: string,
-  difficulty: "beginner" | "intermediate" | "advanced"
+  difficulty: "beginner" | "intermediate" | "advanced",
+  isCapitalized = false,
+  isStartOfSentence = false
 ): boolean {
   if (word.length < 2) return false;
 
@@ -155,6 +157,15 @@ export function shouldTranslate(
   if (/^[^\w\s]+$/.test(word)) return false;
 
   const lower = word.toLowerCase();
+
+  // Filter out Person Names & Proper Nouns
+  if (isCapitalized && !isStartOfSentence) {
+    return false;
+  }
+
+  if (isCapitalized && isStartOfSentence && !INTERMEDIATE_SKIP.has(lower) && !COMMON_WORDS.has(lower)) {
+    return false;
+  }
 
   switch (difficulty) {
     case "beginner":

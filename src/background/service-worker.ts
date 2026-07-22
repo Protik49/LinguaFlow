@@ -1,103 +1,23 @@
 import type { TranslationRequest, TranslationResult, VocabularyEntry } from "../shared/types";
-import { translateWord } from "../shared/api";
-import { getSettings, saveSettings, getCachedTranslation, cacheTranslation, addVocabularyEntry } from "../shared/storage";
+import { translateWord, translateBatch } from "../shared/api";
+import {
+  getSettings,
+  saveSettings,
+  getCachedTranslation,
+  cacheTranslation,
+  addVocabularyEntry,
+  importVocabulary,
+  markEntryReviewed,
+  getStoredErrors,
+  setStoredErrors,
+} from "../shared/storage";
 import { MESSAGE_TYPES } from "../shared/constants";
 
-interface PendingRequest {
-  word: string;
-  targetLanguage: string;
-  context: string;
-  resolve: (result: TranslationResult) => void;
-  reject: (error: Error) => void;
-}
-
-const pendingQueue: PendingRequest[] = [];
-let processing = false;
-let lastRequestTime = 0;
-const MIN_INTERVAL_MS = 1200; // 1.2s between requests for free tier
-let consecutive429 = 0;
-const recentErrors: { message: string; time: string }[] = [];
-
-function recordError(msg: string) {
-  recentErrors.unshift({ message: msg, time: new Date().toLocaleTimeString() });
-  if (recentErrors.length > 20) recentErrors.pop();
-  chrome.storage.local.set({ linguaflow_last_errors: recentErrors });
-}
-
-async function delay(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-async function processQueue() {
-  if (processing) return;
-  processing = true;
-
-  while (pendingQueue.length > 0) {
-    const req = pendingQueue.shift()!;
-    const settings = await getSettings();
-
-    if (!settings.enabled) {
-      req.reject(new Error("Extension disabled"));
-      continue;
-    }
-
-    // Rate limiting: wait minimum interval between requests
-    const now = Date.now();
-    const elapsed = now - lastRequestTime;
-    if (elapsed < MIN_INTERVAL_MS) {
-      await delay(MIN_INTERVAL_MS - elapsed);
-    }
-
-    // Exponential backoff on consecutive 429s
-    if (consecutive429 > 0) {
-      const backoffMs = Math.min(1000 * Math.pow(2, consecutive429), 30000);
-      await delay(backoffMs);
-    }
-
-    try {
-      const cacheKey = `${req.word}:${req.targetLanguage}`;
-      const cached = await getCachedTranslation(cacheKey);
-
-      if (cached) {
-        consecutive429 = 0;
-        lastRequestTime = Date.now();
-        req.resolve(cached);
-        continue;
-      }
-
-      const result = await translateWord({
-        word: req.word,
-        context: req.context,
-        targetLanguage: req.targetLanguage as TranslationRequest["targetLanguage"],
-      });
-
-      consecutive429 = 0;
-      lastRequestTime = Date.now();
-      await cacheTranslation(cacheKey, result);
-      req.resolve(result);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      recordError(msg);
-
-      if (msg.includes("429") || msg.includes("rate limit") || msg.includes("Retry in")) {
-        consecutive429++;
-      } else {
-        consecutive429 = 0;
-      }
-
-      lastRequestTime = Date.now();
-      req.reject(new Error(msg));
-    }
-  }
-
-  processing = false;
-}
-
-function enqueueTranslation(word: string, targetLanguage: string, context = ""): Promise<TranslationResult> {
-  return new Promise((resolve, reject) => {
-    pendingQueue.push({ word, targetLanguage, context, resolve, reject });
-    processQueue();
-  });
+async function recordError(msg: string) {
+  const errors = await getStoredErrors();
+  errors.unshift({ message: msg, time: new Date().toLocaleTimeString() });
+  if (errors.length > 20) errors.pop();
+  await setStoredErrors(errors);
 }
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
@@ -114,7 +34,87 @@ async function handleMessage(type: string, payload: unknown): Promise<unknown> {
       const { word, context, targetLanguage } = payload as { word: string; context?: string; targetLanguage?: string };
       const settings = await getSettings();
       const language = targetLanguage || settings.targetLanguage;
-      return enqueueTranslation(word, language, context || "");
+
+      if (!settings.enabled) {
+        throw new Error("Extension disabled");
+      }
+
+      const cacheKey = `${word}:${language}`;
+      const cached = await getCachedTranslation(cacheKey);
+      if (cached) return cached;
+
+      try {
+        const result = await translateWord({
+          word,
+          context: context || "",
+          targetLanguage: language as TranslationRequest["targetLanguage"],
+        });
+        await cacheTranslation(cacheKey, result);
+        return result;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        await recordError(msg);
+        throw new Error(msg);
+      }
+    }
+
+    case MESSAGE_TYPES.TRANSLATE_BATCH: {
+      const { items, targetLanguage } = payload as {
+        items: Array<{ word: string; context?: string }>;
+        targetLanguage?: string;
+      };
+      const settings = await getSettings();
+      const language = targetLanguage || settings.targetLanguage;
+
+      if (!settings.enabled) {
+        throw new Error("Extension disabled");
+      }
+
+      const results: Record<string, TranslationResult> = {};
+      const uncachedItems: Array<{ word: string; context?: string }> = [];
+      const seenUncached = new Set<string>();
+
+      for (const item of items) {
+        const lower = item.word.toLowerCase();
+        const cacheKey = `${item.word}:${language}`;
+        const cached = await getCachedTranslation(cacheKey);
+        if (cached) {
+          results[lower] = cached;
+        } else if (!seenUncached.has(lower)) {
+          seenUncached.add(lower);
+          uncachedItems.push(item);
+        }
+      }
+
+      if (uncachedItems.length > 0) {
+        const CHUNK_SIZE = 15;
+        for (let i = 0; i < uncachedItems.length; i += CHUNK_SIZE) {
+          const chunk = uncachedItems.slice(i, i + CHUNK_SIZE);
+          const requests: TranslationRequest[] = chunk.map((item) => ({
+            word: item.word,
+            context: item.context || "",
+            targetLanguage: language as TranslationRequest["targetLanguage"],
+          }));
+
+          try {
+            const batchResults = await translateBatch(requests);
+            for (const [w, res] of Object.entries(batchResults)) {
+              results[w] = res;
+              await cacheTranslation(`${w}:${language}`, res);
+            }
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            await recordError(msg);
+            if (Object.keys(results).length === 0) throw new Error(msg);
+          }
+
+          if (i + CHUNK_SIZE < uncachedItems.length) {
+            await new Promise((r) => setTimeout(r, 500));
+          }
+        }
+      }
+
+      return results;
     }
 
     case MESSAGE_TYPES.GET_SETTINGS: {
@@ -124,23 +124,26 @@ async function handleMessage(type: string, payload: unknown): Promise<unknown> {
     case MESSAGE_TYPES.SAVE_VOCABULARY: {
       const entry = payload as VocabularyEntry;
       await addVocabularyEntry(entry);
+      await updateBadgeCount();
       return { saved: true };
+    }
+
+    case MESSAGE_TYPES.IMPORT_VOCABULARY: {
+      const entries = payload as VocabularyEntry[];
+      const result = await importVocabulary(entries);
+      await updateBadgeCount();
+      return result;
+    }
+
+    case MESSAGE_TYPES.MARK_REVIEWED: {
+      const { id } = payload as { id: string };
+      await markEntryReviewed(id);
+      return { reviewed: true };
     }
 
     case MESSAGE_TYPES.CACHE_CLEAR: {
       await chrome.storage.local.remove("linguaflow_translation_cache");
       return { cleared: true };
-    }
-
-    case MESSAGE_TYPES.TOGGLE_ENABLED: {
-      const settings = await getSettings();
-      await saveSettings({ enabled: !settings.enabled });
-      return { enabled: !settings.enabled };
-    }
-
-    case MESSAGE_TYPES.OPEN_OPTIONS: {
-      chrome.runtime.openOptionsPage();
-      return { opened: true };
     }
 
     case MESSAGE_TYPES.TEST_CONNECTION: {
@@ -166,18 +169,17 @@ async function handleMessage(type: string, payload: unknown): Promise<unknown> {
         return { success: true, message: `${provider} OK — hello → ${result.translation || result.definition || "OK"}` };
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        recordError(msg);
+        await recordError(msg);
         return { success: false, message: msg };
       }
     }
 
     case MESSAGE_TYPES.GET_ERRORS: {
-      return recentErrors;
+      return getStoredErrors();
     }
 
     case MESSAGE_TYPES.CLEAR_ERRORS: {
-      recentErrors.length = 0;
-      chrome.storage.local.remove("linguaflow_last_errors");
+      await setStoredErrors([]);
       return { cleared: true };
     }
 
@@ -186,17 +188,24 @@ async function handleMessage(type: string, payload: unknown): Promise<unknown> {
   }
 }
 
-chrome.runtime.onInstalled.addListener(async () => {
-  const settings = await getSettings();
-  const hasKey = settings.apiProvider === "gemini" ? settings.geminiApiKey : settings.openrouterApiKey;
-  if (!hasKey) {
-    console.log(
-      "%cLinguaFlow %cinstalled! %cSet your API key in the Setup tab.",
-      "color: #6366f1; font-weight: bold",
-      "color: #22c55e",
-      "color: inherit"
-    );
+async function updateBadgeCount() {
+  try {
+    const result = await chrome.storage.local.get("linguaflow_vocabulary");
+    const count = (result.linguaflow_vocabulary || []).length;
+    await chrome.action.setBadgeText({ text: count > 0 ? String(count) : "" });
+    await chrome.action.setBadgeBackgroundColor({ color: "#6366f1" });
+  } catch {
+    // Badge API may not be available in all contexts
   }
+}
+
+chrome.runtime.onInstalled.addListener(async (details) => {
+  if (details.reason === "install") {
+    await saveSettings({ onboarded: false });
+    chrome.runtime.openOptionsPage();
+  }
+
+  await updateBadgeCount();
 });
 
 chrome.storage.onChanged.addListener((changes, areaName) => {
@@ -214,5 +223,9 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
         }
       });
     });
+  }
+
+  if (changes.linguaflow_vocabulary) {
+    updateBadgeCount();
   }
 });

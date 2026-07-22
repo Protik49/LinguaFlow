@@ -173,6 +173,168 @@ Output ONLY a JSON object like this, nothing else:
   return result;
 }
 
+/* ── Batch Prompts & Parsers ── */
+
+function buildBatchSystemPrompt(targetLanguage: string): string {
+  return `You are a precise vocabulary translation assistant. Your task is to translate multiple words into ${targetLanguage}.
+
+Given a JSON list of word items (each with "word" and optional "context"), return ONLY a valid JSON object mapping each original word (in lowercase) to an object with:
+- "translation": translation in ${targetLanguage}
+- "definition": brief definition in ${targetLanguage} (max 10 words)
+- "pronunciation": pronunciation guide for original word
+- "synonym": one synonym in ${targetLanguage} or empty string
+
+Format:
+{
+  "word1": {"translation":"...","definition":"...","pronunciation":"...","synonym":"..."},
+  "word2": {"translation":"...","definition":"...","pronunciation":"...","synonym":"..."}
+}
+
+Rules:
+- Output ONLY valid JSON. No markdown code fences, no explanation.
+- Keep values concise.`;
+}
+
+function parseBatchResponse(content: string): Record<string, TranslationResult> {
+  let json = content.trim();
+  json = json.replace(/```(?:json)?\s*/g, "").trim();
+
+  const braceStart = json.indexOf("{");
+  const braceEnd = json.lastIndexOf("}");
+  if (braceStart !== -1 && braceEnd > braceStart) {
+    json = json.substring(braceStart, braceEnd + 1);
+  }
+
+  const results: Record<string, TranslationResult> = {};
+  try {
+    const parsed = JSON.parse(json);
+    if (typeof parsed === "object" && parsed !== null) {
+      for (const [key, val] of Object.entries(parsed)) {
+        if (typeof val === "object" && val !== null) {
+          const item = val as Record<string, unknown>;
+          results[key.toLowerCase()] = {
+            translation: String(item.translation || ""),
+            definition: String(item.definition || ""),
+            pronunciation: String(item.pronunciation || ""),
+            synonym: String(item.synonym || ""),
+            cachedAt: Date.now(),
+          };
+        }
+      }
+    }
+  } catch {
+    /* ignore parse errors */
+  }
+  return results;
+}
+
+/* ── OpenRouter API Batch ── */
+
+async function callOpenRouterBatch(
+  apiKey: string,
+  requests: TranslationRequest[]
+): Promise<Record<string, TranslationResult>> {
+  if (requests.length === 0) return {};
+  const targetLanguage = requests[0].targetLanguage;
+  const items = requests.map((r) => ({ word: r.word, context: r.context }));
+
+  const response = await fetch(OPENROUTER_URL, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+      "HTTP-Referer": "https://linguaflow.extension",
+      "X-Title": "LinguaFlow",
+    },
+    body: JSON.stringify({
+      model: "google/gemma-4-31b-it:free",
+      messages: [
+        { role: "system", content: buildBatchSystemPrompt(targetLanguage) },
+        { role: "user", content: JSON.stringify(items) },
+      ],
+      temperature: 0.2,
+      max_tokens: 1500,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    type ApiError = { error?: { message?: string } };
+    let parsed: ApiError | undefined;
+    try { parsed = JSON.parse(errorText) as ApiError; } catch { /* ignore */ }
+
+    if (response.status === 429) {
+      const retryAfter = parseInt(response.headers.get("Retry-After") || "0", 10);
+      const waitMsg = retryAfter > 0
+        ? `Rate limited. Retry in ${retryAfter}s`
+        : "Rate limited. Free tier limit reached. Wait or switch to Gemini API.";
+      throw new Error(waitMsg);
+    }
+    if (response.status === 402) {
+      throw new Error("OpenRouter: out of credits. Add funds at openrouter.ai/credits");
+    }
+    throw new Error(parsed?.error?.message || `OpenRouter error ${response.status}`);
+  }
+
+  const data = await response.json();
+  const content = data.choices?.[0]?.message?.content || "";
+  return parseBatchResponse(content);
+}
+
+/* ── Gemini API Batch ── */
+
+async function callGeminiBatch(
+  apiKey: string,
+  requests: TranslationRequest[]
+): Promise<Record<string, TranslationResult>> {
+  if (requests.length === 0) return {};
+  const targetLanguage = requests[0].targetLanguage;
+  const items = requests.map((r) => ({ word: r.word, context: r.context }));
+
+  const userPrompt = `${buildBatchSystemPrompt(targetLanguage)}
+
+Words to translate:
+${JSON.stringify(items)}`;
+
+  const response = await fetch(`${GEMINI_URL}?key=${apiKey}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      contents: [{
+        parts: [{ text: userPrompt }],
+      }],
+      generationConfig: {
+        temperature: 0.1,
+        maxOutputTokens: 1500,
+      },
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    type ApiError = { error?: { message?: string } };
+    let parsed: ApiError | undefined;
+    try { parsed = JSON.parse(errorText) as ApiError; } catch { /* ignore */ }
+
+    if (response.status === 429) {
+      throw new Error("Gemini API: rate limited. Wait and retry, or switch to OpenRouter in Setup.");
+    }
+    throw new Error(parsed?.error?.message || `Gemini API error ${response.status}`);
+  }
+
+  const data = await response.json();
+  if (data.error) {
+    throw new Error(`Gemini API: ${data.error.message || JSON.stringify(data.error)}`);
+  }
+
+  const content = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+  if (!content) {
+    throw new Error("Gemini API returned empty response");
+  }
+
+  return parseBatchResponse(content);
+}
+
 /* ── Main translate function ── */
 
 export async function translateWord(request: TranslationRequest): Promise<TranslationResult> {
@@ -191,3 +353,21 @@ export async function translateWord(request: TranslationRequest): Promise<Transl
   }
   return callOpenRouter(settings.openrouterApiKey, request);
 }
+
+export async function translateBatch(requests: TranslationRequest[]): Promise<Record<string, TranslationResult>> {
+  if (requests.length === 0) return {};
+  const settings = await getSettings();
+
+  if (settings.apiProvider === "gemini") {
+    if (!settings.geminiApiKey) {
+      throw new Error("Gemini API key not configured. Get one at aistudio.google.com/apikey");
+    }
+    return callGeminiBatch(settings.geminiApiKey, requests);
+  }
+
+  if (!settings.openrouterApiKey) {
+    throw new Error("OpenRouter API key not configured. Go to Setup tab and enter your key.");
+  }
+  return callOpenRouterBatch(settings.openrouterApiKey, requests);
+}
+

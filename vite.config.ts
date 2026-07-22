@@ -45,6 +45,10 @@ function copyManifestPlugin() {
           "48": "icons/icon48.png",
           "128": "icons/icon128.png",
         },
+
+        content_security_policy: {
+          extension_pages: "script-src 'self'; object-src 'self'",
+        },
       };
 
       writeFileSync(
@@ -67,6 +71,7 @@ export default defineConfig({
   build: {
     outDir: resolve(__dirname, "dist"),
     emptyOutDir: false,
+    sourcemap: true,
     rollupOptions: {
       input: {
         popup: resolve(srcDir, "popup/index.html"),

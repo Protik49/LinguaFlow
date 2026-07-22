@@ -16,8 +16,6 @@ export type TargetLanguage =
 
 export type Difficulty = "beginner" | "intermediate" | "advanced";
 
-export type DisplayMode = "tooltip" | "inline";
-
 export interface TranslationResult {
   translation: string;
   definition: string;
@@ -35,8 +33,8 @@ export interface UserSettings {
   apiProvider: ApiProvider;
   openrouterApiKey: string;
   geminiApiKey: string;
-  displayMode: DisplayMode;
   maxTranslationsPerPage: number;
+  onboarded: boolean;
 }
 
 export interface VocabularyEntry {
@@ -51,6 +49,7 @@ export interface VocabularyEntry {
   targetLanguage: TargetLanguage;
   savedAt: number;
   reviewCount: number;
+  nextReviewAt: number;
 }
 
 export interface TranslationRequest {
@@ -64,9 +63,14 @@ export interface TranslationCacheEntry {
   cachedAt: number;
 }
 
-export interface LinguaFlowMessage {
-  type: string;
-  payload?: unknown;
+export interface PageWord {
+  word: string;
+  context: string;
+}
+
+export interface TestConnectionResult {
+  success: boolean;
+  message: string;
 }
 
 export const DEFAULT_SETTINGS: UserSettings = {
@@ -76,8 +80,8 @@ export const DEFAULT_SETTINGS: UserSettings = {
   apiProvider: "openrouter",
   openrouterApiKey: "",
   geminiApiKey: "",
-  displayMode: "tooltip",
-  maxTranslationsPerPage: 1000,
+  maxTranslationsPerPage: 75,
+  onboarded: false,
 };
 
 export const LANGUAGE_OPTIONS: { value: TargetLanguage; label: string }[] = [

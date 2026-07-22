@@ -6,15 +6,16 @@
   "scripts": {
     "dev": "concurrently -n ui,bg,cs \"npm run dev:ui\" \"npm run dev:bg\" \"npm run dev:cs\"",
     "dev:ui": "vite",
-"dev:bg": "esbuild src/background/service-worker.ts --bundle --outfile=dist/background.js --format=iife --target=chrome100 --watch",
-"dev:cs": "esbuild src/content/index.ts --bundle --outfile=dist/content.js --format=iife --target=chrome100 --watch",
+    "dev:bg": "esbuild src/background/service-worker.ts --bundle --outfile=dist/background.js --format=iife --target=chrome100 --watch",
+    "dev:cs": "esbuild src/content/index.ts --bundle --outfile=dist/content.js --format=iife --target=chrome100 --watch",
     "build": "npm run build:clean && npm run build:bg && npm run build:cs && npm run build:icons && npm run build:ui",
     "build:clean": "node -e \"const{existsSync,rmSync,mkdirSync}=require('fs');const p='dist';if(existsSync(p))rmSync(p,{recursive:true});mkdirSync(p,{recursive:true});\"",
-    "build:bg": "esbuild src/background/service-worker.ts --bundle --outfile=dist/background.js --format=iife --target=chrome100 --minify",
-    "build:cs": "esbuild src/content/index.ts --bundle --outfile=dist/content.js --format=iife --target=chrome100 --minify",
+    "build:bg": "esbuild src/background/service-worker.ts --bundle --outfile=dist/background.js --format=iife --target=chrome100 --minify --sourcemap",
+    "build:cs": "esbuild src/content/index.ts --bundle --outfile=dist/content.js --format=iife --target=chrome100 --minify --sourcemap",
     "build:ui": "vite build",
     "build:icons": "node scripts/generate-icons.mjs",
-    "build:all": "npm run build:clean && npm run build:bg && npm run build:cs && npm run build:icons && npm run build:ui"
+    "typecheck": "tsc --noEmit",
+    "lint": "tsc --noEmit"
   },
   "dependencies": {
     "react": "^18.3.1",
