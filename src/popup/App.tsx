@@ -108,8 +108,8 @@ function WordCard({ word: pw, targetLanguage, onSave }: WordCardProps) {
 
   return (
     <div
-      className={`border border-border-strong transition-all duration-fast hover:border-text-inverse ${
-        expanded ? "rounded-xs" : "rounded-md"
+      className={`bg-[#050505] border border-border-strong glow-green-hover ${
+        expanded ? "rounded-xs border-text-inverse/45 shadow-[0_0_12px_rgba(92,224,134,0.06)]" : "rounded-md"
       }`}
     >
       <button
@@ -562,10 +562,10 @@ function AppContent() {
             onClick={() => setTab(t.id)}
             role="tab"
             aria-selected={tab === t.id}
-            className={`flex-1 py-2 text-xs font-semibold transition-colors duration-fast ${
+            className={`flex-1 py-2.5 text-xs font-semibold transition-all duration-fast ${
               tab === t.id
-                ? "text-surface-raised border-b-2 border-surface-raised"
-                : "text-text-inverse hover:text-text-primary hover:bg-[#0c0d08]"
+                ? "text-surface-raised border-b-2 border-surface-raised tab-active-glow bg-[#050505]/40"
+                : "text-text-inverse hover:text-text-primary hover:bg-[#060604]/40"
             }`}
           >
             {t.label}
