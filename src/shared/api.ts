@@ -12,7 +12,7 @@ function buildSystemPrompt(targetLanguage: string): string {
   return `You are a precise vocabulary translation assistant. Your ONLY task is to translate individual words/phrases and provide concise lexical information.
 
 Given a word and its surrounding context, respond with ONLY a valid JSON object. Do NOT wrap it in markdown code fences. Output ONLY the raw JSON:
-{"translation":"translation in ${targetLanguage}","definition":"brief definition in ${targetLanguage} (max 10 words)","pronunciation":"pronunciation guide for the ORIGINAL word","synonym":"one synonym or similar word in ${targetLanguage}, or empty string if none"}
+{"translation":"translation in ${targetLanguage}","definition":"brief definition in ${targetLanguage} (max 10 words)","pronunciation":"pronunciation guide for the ORIGINAL word","synonym":"one synonym or similar word in ${targetLanguage}, or empty string if none","forms":{"verb":"verb form if different and relevant, or empty","adjective":"adjective form if different and relevant, or empty","noun":"noun form if different and relevant, or empty","adverb":"adverb form if different and relevant, or empty"}}
 
 Rules:
 - Context matters: choose the translation that fits the given context
@@ -42,11 +42,18 @@ function parseResponse(content: string): TranslationResult | null {
   try {
     const parsed = JSON.parse(json);
     if (typeof parsed === "object" && parsed !== null) {
+      const formsObj = parsed.forms && typeof parsed.forms === "object" ? parsed.forms : {};
       return {
         translation: String(parsed.translation || ""),
         definition: String(parsed.definition || ""),
         pronunciation: String(parsed.pronunciation || ""),
         synonym: String(parsed.synonym || ""),
+        forms: {
+          verb: String(formsObj.verb || ""),
+          adjective: String(formsObj.adjective || ""),
+          noun: String(formsObj.noun || ""),
+          adverb: String(formsObj.adverb || ""),
+        },
         cachedAt: Date.now(),
       };
     }
@@ -58,6 +65,7 @@ function parseResponse(content: string): TranslationResult | null {
       definition: "",
       pronunciation: "",
       synonym: "",
+      forms: { verb: "", adjective: "", noun: "", adverb: "" },
       cachedAt: Date.now(),
     };
     for (const line of lines) {
@@ -90,7 +98,7 @@ async function callOpenRouter(apiKey: string, request: TranslationRequest): Prom
         { role: "user", content: buildUserPrompt(request.word, request.context, request.targetLanguage) },
       ],
       temperature: 0.3,
-      max_tokens: 200,
+      max_tokens: 350,
     }),
   });
 
@@ -128,7 +136,7 @@ Context: ${request.context || "None"}
 Language: ${request.targetLanguage}
 
 Output ONLY a JSON object like this, nothing else:
-{"translation":"the translation","definition":"brief meaning","pronunciation":"how to say it","synonym":"similar word"}`;
+{"translation":"the translation","definition":"brief meaning","pronunciation":"how to say it","synonym":"similar word","forms":{"verb":"verb form if relevant/different, else empty","adjective":"adjective form if relevant/different, else empty","noun":"noun form if relevant/different, else empty","adverb":"adverb form if relevant/different, else empty"}}`;
 
   const response = await fetch(`${GEMINI_URL}?key=${apiKey}`, {
     method: "POST",
@@ -139,7 +147,7 @@ Output ONLY a JSON object like this, nothing else:
       }],
       generationConfig: {
         temperature: 0.1,
-        maxOutputTokens: 200,
+        maxOutputTokens: 350,
       },
     }),
   });
@@ -183,11 +191,17 @@ Given a JSON list of word items (each with "word" and optional "context"), retur
 - "definition": brief definition in ${targetLanguage} (max 10 words)
 - "pronunciation": pronunciation guide for original word
 - "synonym": one synonym in ${targetLanguage} or empty string
+- "forms": an object containing other grammatical forms (verb, adjective, noun, adverb) if different and relevant, or empty string values
 
 Format:
 {
-  "word1": {"translation":"...","definition":"...","pronunciation":"...","synonym":"..."},
-  "word2": {"translation":"...","definition":"...","pronunciation":"...","synonym":"..."}
+  "word1": {
+    "translation": "...",
+    "definition": "...",
+    "pronunciation": "...",
+    "synonym": "...",
+    "forms": {"verb": "...", "adjective": "...", "noun": "...", "adverb": "..."}
+  }
 }
 
 Rules:
@@ -212,11 +226,18 @@ function parseBatchResponse(content: string): Record<string, TranslationResult> 
       for (const [key, val] of Object.entries(parsed)) {
         if (typeof val === "object" && val !== null) {
           const item = val as Record<string, unknown>;
+          const formsObj = item.forms && typeof item.forms === "object" ? item.forms : {};
           results[key.toLowerCase()] = {
             translation: String(item.translation || ""),
             definition: String(item.definition || ""),
             pronunciation: String(item.pronunciation || ""),
             synonym: String(item.synonym || ""),
+            forms: {
+              verb: String(formsObj.verb || ""),
+              adjective: String(formsObj.adjective || ""),
+              noun: String(formsObj.noun || ""),
+              adverb: String(formsObj.adverb || ""),
+            },
             cachedAt: Date.now(),
           };
         }
@@ -253,7 +274,7 @@ async function callOpenRouterBatch(
         { role: "user", content: JSON.stringify(items) },
       ],
       temperature: 0.2,
-      max_tokens: 1500,
+      max_tokens: 2000,
     }),
   });
 
@@ -305,7 +326,7 @@ ${JSON.stringify(items)}`;
       }],
       generationConfig: {
         temperature: 0.1,
-        maxOutputTokens: 1500,
+        maxOutputTokens: 2000,
       },
     }),
   });

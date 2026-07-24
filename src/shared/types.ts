@@ -16,12 +16,20 @@ export type TargetLanguage =
 
 export type Difficulty = "beginner" | "intermediate" | "advanced";
 
+export interface GrammaticalForms {
+  verb?: string;
+  adjective?: string;
+  noun?: string;
+  adverb?: string;
+}
+
 export interface TranslationResult {
   translation: string;
   definition: string;
   pronunciation: string;
   synonym: string;
   cachedAt: number;
+  forms?: GrammaticalForms;
 }
 
 export type ApiProvider = "openrouter" | "gemini";
@@ -50,6 +58,7 @@ export interface VocabularyEntry {
   savedAt: number;
   reviewCount: number;
   nextReviewAt: number;
+  forms?: GrammaticalForms;
 }
 
 export interface TranslationRequest {

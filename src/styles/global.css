@@ -10,8 +10,15 @@
   }
 
   body {
-    @apply text-gray-900 dark:text-gray-100;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    background-color: #000000;
+    color: #ffffff;
+    font-family: Aeonik, Arial, sans-serif;
+  }
+
+  /* Focus rings for keyboard navigation as required by WCAG 2.2 AA accessibility rules in DESIGN.md */
+  *:focus-visible {
+    outline: 2px solid #5ce086 !important;
+    outline-offset: 2px !important;
   }
 
   ::-webkit-scrollbar {
@@ -20,15 +27,16 @@
   }
 
   ::-webkit-scrollbar-track {
-    @apply bg-transparent;
+    background: transparent;
   }
 
   ::-webkit-scrollbar-thumb {
-    @apply bg-gray-300 dark:bg-gray-600 rounded-full;
+    background: #273f2b;
+    border-radius: 4px;
   }
 
   ::-webkit-scrollbar-thumb:hover {
-    @apply bg-gray-400 dark:bg-gray-500;
+    background: #5ce086;
   }
 
   @media (prefers-reduced-motion: reduce) {
@@ -41,4 +49,31 @@
       scroll-behavior: auto !important;
     }
   }
+}
+
+@keyframes scanVertical {
+  0% {
+    top: 0%;
+    opacity: 0;
+  }
+  15% {
+    opacity: 0.8;
+  }
+  85% {
+    opacity: 0.8;
+  }
+  100% {
+    top: 100%;
+    opacity: 0;
+  }
+}
+
+.scanner-line {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  background: #5ce086;
+  box-shadow: 0 0 10px #5ce086, 0 0 4px #5ce086;
+  animation: scanVertical 2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
 }
